@@ -1,0 +1,16 @@
+How to install RIFEC
+====================
+
+The program is a self-contained Perl script, so the only dependencies
+are Perl modules.  On Fedora 14, installing the following packages
+should be sufficient to run the script:
+
+perl-MooseX-Declare
+perl-Config-IniFiles
+perl-libwww-perl
+perl-MD5
+perl-Crypt-Random
+perl-Archive-Tar
+perl-IO-stringy
+perl-XML-Simple
+perl-File-Sync

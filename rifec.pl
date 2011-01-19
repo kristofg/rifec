@@ -333,6 +333,7 @@ class RIFEC::File {
     use Data::Dumper;
     use IO::AtomicFile;
     use File::Spec;
+    use File::Sync qw();
     use Digest::MD5 qw();
 
     has 'session'       => (isa => 'RIFEC::Session', is => 'ro', required => 1);
@@ -406,7 +407,7 @@ class RIFEC::File {
 	
 	# Race conditions are not a problem here, because all
 	# instances get unique tempfile names anyway
-	my ($fh, $filename) = tempfile(sprintf("eyefitransit-%d-XXXXXXXX", $$),
+	my ($fh, $filename) = tempfile(sprintf(".eyefitransit-%d-XXXXXXXX", $$),
 				       DIR    => $folder,
 				       UNLINK => 1);
 	print { $fh } $content;
@@ -451,66 +452,84 @@ class RIFEC::File {
 	return 1;
     }
 
-    # We certainly don't want to overwrite existing files, but we
-    # don't want the card to be stuck with files either.  So we
-    # receive it, but add .1 (or .2, or .n+1) to the filename.  The
-    # user will have to sort out duplicates afterwards.
-    method _bump_filename(Str $file) {
-	my $max    = 100;
-	my $i      = 1;
-	my $new_fn = $file;
+    # We never want to overwrite existing files, but we don't want the
+    # card to be stuck with files because we're not able to write them
+    # to disk either.  So we receive it, but add .1 (or .2, or .n+1)
+    # to the filename.  The user will have to sort out duplicates
+    # afterwards.
+    method _link_file(Str $tempfile, Str $destination_name) {
+	my $tries = 0;
+	my $max   = 100;
+	my $dst   = $destination_name;
+	my $done  = undef;
 	
-	while (-e $new_fn) {
-	    if ($i > $max) {
-		die sprintf("Unable to write file '%s': File exists", $file);
+	while (!$done && $tries < $max) {
+	    if (link $tempfile, $dst) {
+		$done = $dst;
+		$log->debug("'%s' created OK", $dst);
 	    }
-	    $new_fn = sprintf("%s.%d", $file, $i++);
+	    else {
+		my $prev_dst = $dst;
+		$dst = sprintf("%s.%d", $destination_name, ++$tries);
+		$log->warn("'%s' already exists, trying '%s'", $prev_dst, $dst);
+	    }
 	}
-	$log->warn("Filename '%s' already exists, writing to '%s' instead",
-		   $file, $new_fn);
-	return $new_fn;
+
+	die sprintf("Unable to write '%s': Destination files already there!", $dst)
+	    unless $done;
+
+	return $dst;
     }
 
     method extract() {
 	my $tar = Archive::Tar->new($self->_tarfile());
+	my $folder = $config->folder($self->session()->card());
+
 	my @files = $tar->list_files();
-	
-	# Sanity checking
-	if (scalar(@files) > 1) {
-	    die sprinf("I don't know how to handle tar balls with >1 files! (%s)",
-		       join(", ", @files));
-	}
+
+	die sprinf("I don't know how to handle tar balls with >1 files! (%s)",
+		   join(", ", @files))
+	    if scalar(@files) > 1;
 
 	my $fn = shift @files;
-	# We need to do some basic validation of the file name before
-	# trying to write it to the destination dir.  If it doesn't
-	# satisfy our constraints, we just dump it.
-	if ($fn =~ /\A [a-z0-9._-]* \z/xi) {
-	    $self->_file( 
-		File::Spec->catfile(
-		    $config->folder($self->session()->card()), $fn));
-	}
-	else {
-	    die sprintf("Illegal name of file inside tarball: '%s'", $fn);
-	}
 	
-	# Here we have a corner case if a file with the same name is
-	# being uploaded multiple times simultaneously.
-	if (-e $self->_file()) {
-	    $self->_file( $self->_bump_filename($self->_file()) );
-	}
+	die sprintf("Illegal name of file inside tarball: '%s'", $fn)
+	    unless $fn =~ /\A [ a-z0-9._-]* \z/xi;
 
-	$log->debug("Writing '%s'...", $self->_file());
-	my $a_fh = IO::AtomicFile->open($self->_file(), 'w');
-	print { $a_fh } $tar->get_content($fn);
-	$a_fh->close
-	    || die "Unable to write file: $!";
+	$self->_file( File::Spec->catfile($folder, $fn) );
 	
-	$log->debug("Removing '%s'...", $self->_tarfile());
-	unlink $self->_tarfile()
-	    || die "Unable to unlink tarfile: $!";
+	# We want to be sure we don't overwrite one file with another,
+	# even in cases where we receive multiple simultaneous uploads
+	# with the same filename to the same directory.
+	my ($fh, $tmpfile) =  tempfile(sprintf(".eyefistore-%d-XXXXXXXX", $$),
+				       DIR    => $folder,
+				       UNLINK => 0);
+	$log->debug("Writing image '%s' to tempfile '%s'...", $fn, $tmpfile);
+	print { $fh } $tar->get_content($fn);
+
+	File::Sync::fsync($fh) or die "Unable to fsync '$tmpfile': $!";
+	close $fh or die "Unable to close FH on '$tmpfile': $!";
+
+	# Do the hard linking from the final file name to the temp file:
+	my $outfile = $self->_link_file($tmpfile, $self->_file);
+
+	$log->warn("Destination file '%s' saved as '%s' to avoid collision",
+		   $fn, $outfile)
+	    unless ($outfile eq $self->_file);
+
+	$self->_file($outfile); # store it
+
+	$log->debug("Removing tar file '%s'", $self->_tarfile());
+	unlink $self->_tarfile() or die "Unable to unlink tarfile: $!";
+	$log->debug("Removing temp file '%s'", $tmpfile);
+	unlink $tmpfile          or die "Unable to unlink tempfile: $!";
+
+	# Chmod it to use the default umask
+	chmod 0666 & ~umask(), $self->_file
+	    or $log->warn("Unable to chmod '%s'", $self->file);
 	
-	$log->info("Saved '%s', deleted '%s'", $self->_file(), $self->_tarfile());
+	$log->info("File '%s' saved, files '%s' and '%s' deleted",
+		   $self->_file(), $self->_tarfile(), $tmpfile);
 	return 'ok';
     }
 }

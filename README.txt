@@ -27,8 +27,8 @@ useful information.
 Todo:
 =====
 
-* More atomic file-writing, making it impossible for even simultaneous
-  uploads of the same file (name) to clobber each other
+* Consider some other file permission/umask handling than using
+  default umask
 
 * Check the card firmware version in the HTTP header, and warn (or
   die) if it is a new or unknown version.
