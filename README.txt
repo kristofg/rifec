@@ -1,10 +1,9 @@
-Eye-Fi Receiver
-===============
+RIFEC: Receive Images From Eye-Fi Cards
+===========================================
 
-Eye-Fi Receiver is a standalone server designed to receive files from
-Eye-Fi cards and store them to disk as reliably as possible.  That's
-it.  It is written in Perl, and has some module dependencies, and is
-GPL.
+rifec.pl is a standalone server designed to receive files from Eye-Fi
+cards and store them to disk as reliably as possible.  That's it.  It
+is written in Perl, has some module dependencies, and is GPL.
 
 Resources and other implementations:
 ====================================

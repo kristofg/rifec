@@ -1,6 +1,6 @@
 #! /usr/bin/perl
 #
-# Eye-Fi Receiver: Receive and store files from Eye-Fi cards
+# RIFEC.pl: Receive Images From Eye-Fi Cards
 # Copyright (C) 2011 Kristoffer Gleditsch
 #
 # This program is free software; you can redistribute it and/or modify
@@ -186,7 +186,7 @@ class RIFEC::Log {
     has '_fh' => (is      => 'rw',
 		  default => sub { \*STDOUT });
 
-    # Short for LogLeve.  I get tired of typing.
+    # Short for LogLevel.  I get tired of typing.
     has '_ll' => (isa => 'HashRef[Str]',
 		  is  => 'ro',
 		  default => sub { {
@@ -197,19 +197,10 @@ class RIFEC::Log {
 		      'trace' => 1, 
 		      }});
     
-    method _get_preamble(Str $ll) {
-	return sprintf("%s %7u %5s ",
-		       HTTP::Date::time2isoz(),
-		       $$,
-		       uc $ll);
-    }
-
     method BUILD (HashRef $args) {
 	if (my $lf = $config->logfile()) {
-
 	    open(my $fh, '>>', $lf)
 		or die "Unable to open logfile for writing: $!";
-
 	    $self->_fh($fh);
 	}
     }
@@ -218,10 +209,16 @@ class RIFEC::Log {
 	close $self->_fh
 	    or die "Unable to close logfile while exiting: $!";
     }
+
+    method _get_preamble(Str $ll) {
+	return sprintf("%s %7u %5s ",
+		       HTTP::Date::time2isoz(),
+		       $$,
+		       uc $ll);
+    }
     
     method _print_if(Str $loglevel, Str @str) {
-	# Sanity check.  $config should perhaps check the set loglevel
-	# itself, but it is initialized before us, so it can't.
+	# Sanity check.
 	foreach my $ll ($loglevel, $config->loglevel) {
 	    die sprintf("Invalid loglevel '%s'", $ll)
 		unless $self->_ll->{lc $ll};
@@ -277,9 +274,9 @@ class RIFEC::Session {
     has 'transfermodetimestamp' => (isa => 'Str', is => 'rw', required => 1);
     has 'card_nonce'            => (isa => 'Str', is => 'rw', required => 1);
 
-    # things we know and others can query.
-    has 'server_nonce'    => (isa => 'Str', is => 'ro', builder => '_s_nonce');
-    has 'authenticated'   => (isa => 'Bool', is => 'rw', default => 0);
+    # things we learn or figure out after construction:
+    has 'server_nonce'  => (isa => 'Str', is => 'ro', builder => '_s_nonce');
+    has 'authenticated' => (isa => 'Bool', is => 'rw', default => 0);
         
     method _s_nonce() {
 	my $octets = makerandom_octet(Strength => 0, Length => 16);
@@ -498,9 +495,6 @@ class RIFEC::File {
 
 	$self->_file( File::Spec->catfile($folder, $fn) );
 	
-	# We want to be sure we don't overwrite one file with another,
-	# even in cases where we receive multiple simultaneous uploads
-	# with the same filename to the same directory.
 	my ($fh, $tmpfile) =  tempfile(sprintf(".eyefistore-%d-XXXXXXXX", $$),
 				       DIR    => $folder,
 				       UNLINK => 0);
@@ -515,7 +509,7 @@ class RIFEC::File {
 
 	$log->warn("Destination file '%s' saved as '%s' to avoid collision",
 		   $fn, $outfile)
-	    unless ($outfile eq $self->_file);
+	    unless $outfile eq $self->_file;
 
 	$self->_file($outfile); # store it
 
