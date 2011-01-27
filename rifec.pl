@@ -454,6 +454,9 @@ class RIFEC::File {
     # to disk either.  So we receive it, but add .1 (or .2, or .n+1)
     # to the filename.  The user will have to sort out duplicates
     # afterwards.
+    #
+    # (We *assume* that if the link() fails, it is because the
+    # filename already exists.)
     method _link_file(Str $tempfile, Str $destination_name) {
 	my $tries = 0;
 	my $max   = 100;

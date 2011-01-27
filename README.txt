@@ -5,6 +5,9 @@ rifec.pl is a standalone server designed to receive files from Eye-Fi
 cards and store them to disk as reliably as possible.  That's it.  It
 is written in Perl, has some module dependencies, and is GPL.
 
+It works great with my Pro X2 card running firmware 4.2139; I have not
+tested other versions, but feedback from people who have is welcome.
+
 Resources and other implementations:
 ====================================
 
@@ -26,8 +29,11 @@ useful information.
 Todo:
 =====
 
+* Daemonize: Make it (optionally) fork to the background, so that it
+  can be run from rc.local without problems.
+
 * Consider some other file permission/umask handling than using
-  default umask
+  default umask (config setting, for instance)
 
 * Check the card firmware version in the HTTP header, and warn (or
   die) if it is a new or unknown version.
