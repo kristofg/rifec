@@ -57,9 +57,10 @@ class RIFEC::Config {
 
     method _read_inifile() {
 	# Fall back to default if undef or empty:
-	if (!$self->file) {
-	    $self->file("rifec.config");
-	}
+	$self->file("rifec.config") unless $self->file;
+
+	# Absolute-ize, so that error messages output a full path:
+	$self->file( Cwd::abs_path($self->file) );
 
 	die sprintf("Config file '%s' does not exist", $self->file)
 	    unless -e $self->file;
@@ -205,16 +206,20 @@ class RIFEC::Log {
 		      }});
     
     method BUILD (HashRef $args) {
-	if (my $lf = $config->logfile()) {
-	    open(my $fh, '>>', $lf)
-		or die "Unable to open logfile for writing: $!";
-	    $self->_fh($fh);
-	}
+	$self->open();
     }
 
     method DEMOLISH () {
 	close $self->_fh
 	    or die "Unable to close logfile while exiting: $!";
+    }
+
+    method open() {
+	if (my $lf = $config->logfile()) {
+	    open(my $fh, '>>', $lf)
+		or die "Unable to open logfile for writing: $!";
+	    $self->_fh($fh);
+	}
     }
 
     method _get_preamble(Str $ll) {
@@ -247,7 +252,7 @@ class RIFEC::Log {
 	    }
 	    # \n-terminate if needed
 	    $out .= ($out =~ /\n\z/) ? "" : "\n";
-	    
+
 	    print { $self->_fh } $out;
 	}
     }
@@ -856,6 +861,7 @@ if ($daemonize) {
 		   "Consider logging to a file instead.");
     }
     Proc::Daemon::Init();
+    $log->open(); # since Proc::Daemon::Init closes all open fh's
 }
 
 $server->run();
