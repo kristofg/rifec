@@ -1,15 +1,17 @@
 RIFEC: Receive Images From Eye-Fi Cards
-===========================================
+=======================================
 
-rifec.pl is a standalone server designed to receive files from Eye-Fi
-cards and store them to disk as reliably as possible.  That's it.  It
-is written in Perl, has some module dependencies, and is GPL.
+rifec.pl is a standalone Linux server script that receives images from
+Eye-Fi cards and stores them to disk.
 
-It works great with my Pro X2 card running firmware 4.2139; I have not
-tested other versions, but feedback from people who have is welcome.
+It is written in Perl, uses a few CPAN modules, and is GPL.  It works
+great with my Pro X2 card running firmware 4.2139.  I have not tested
+other versions, but feedback from people who have is welcome.
 
-Resources and other implementations:
-====================================
+Resources and other implementations
+===================================
+
+The hardware: http://www.eye.fi/
 
 This is not the first implementation of such a server.  Some of the
 others are:
@@ -26,33 +28,32 @@ The Eye-Fi forum thread at
 http://forums.eye.fi/viewtopic.php?f=4&t=270 also contains some very
 useful information.
 
-Todo:
-=====
+Todo
+====
 
-* Daemonize: Make it (optionally) fork to the background, so that it
-  can be run from rc.local without problems.
+* Consider checking the card firmware version in the HTTP header, and
+  warn (or die) if it is a new or unknown version.
 
-* Consider some other file permission/umask handling than using
-  default umask (config setting, for instance)
-
-* Check the card firmware version in the HTTP header, and warn (or
-  die) if it is a new or unknown version.
-
-Things I'm still wondering about:
-=================================
+Things I'm still wondering about
+================================
 
 * What is the filesignature field in the SOAP envelope of the file
   upload?  Something we can check?
 
-Ideas (not quite on the todo list, at least yet):
-=================================================
+* What does the 'flags' field in the GetPhotoStatus request mean?
+
+* What does the 'offset' field in the GetPhotoStatus reply mean?
+
+Ideas
+=====
 
 * Destination subdirectories not just based on date but on camera
   (fetched from EXIF info)?  At lot more useful if you move your card
-  around - or have a pool of cards and a pool of cameras
+  around - or have a pool of cards and a pool of cameras; would be
+  more interesting if I had several Eye-Fi cards. :)
 
-Things I've decided not to worry about for now:
-===============================================
+Things I've decided not to worry about for now
+==============================================
 
 * Some kind of persistent upload counter not just between handlers in
   the same session, but between sessions?  Does it make any difference

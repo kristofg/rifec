@@ -14,3 +14,4 @@ perl-Archive-Tar
 perl-IO-stringy
 perl-XML-Simple
 perl-File-Sync
+perl-Proc-Daemon

@@ -31,6 +31,7 @@ my $config;
 # Config parsing and handling (accessed through the $config object)
 class RIFEC::Config {
     use Config::IniFiles;
+    use Cwd qw();
     use Data::Dumper;
 
     has 'file' => (is       => 'rw');
@@ -124,6 +125,12 @@ class RIFEC::Config {
 	    unless defined $v;
 
 	return $v;
+    }
+
+    method say_hello() {
+	return sprintf("Config file '%s', %d card(s) configured",
+		       Cwd::abs_path($self->file),
+		       scalar keys %{ $self->_card });
     }
 
     # Actual config accessors:
@@ -503,7 +510,7 @@ class RIFEC::File {
 				       UNLINK => 0);
 	$log->debug("Writing image '%s' to tempfile '%s'...", $fn, $tmpfile);
 	print { $fh } $tar->get_content($fn);
-
+	# Should we do some explicit flush() here?
 	File::Sync::fsync($fh) or die "Unable to fsync '$tmpfile': $!";
 	close $fh or die "Unable to close FH on '$tmpfile': $!";
 
@@ -720,7 +727,7 @@ class RIFEC::Handler {
 	$header->content_type         ('text/xml');
 	$header->content_type_charset ('UTF-8');
 	$header->content_length       (length($raw));
-	$header->server               ('RIFEC v0.3');
+	$header->server               ('rifec.pl v0.4');
 	$header->date                 (time);
 	$header->header               ('pragma' => 'no-cache');
 	
@@ -785,7 +792,6 @@ class RIFEC::Server {
         my $d = HTTP::Daemon->new(LocalPort => $config->port(),
 				  ReuseAddr => 1)
 	    || die "Unable to instantiate HTTP Daemon: $!";
-	# $d->timeout(30);
 	$log->info("Listening on %s", $d->url());
 	
 	while (my $conn = $d->accept()) 
@@ -826,15 +832,32 @@ class RIFEC::Server {
 
 use Getopt::Long;
 use Pod::Usage;
-my $cf_file;
+use Proc::Daemon;
 
-GetOptions('help|h|?'   => sub { pod2usage(0) },
-	   'config|c=s' => \$cf_file)
+my $cf_file;
+my $daemonize;
+
+GetOptions('help|h|?'    => sub { pod2usage(0) },
+	   'config|c=s'  => \$cf_file,
+	   'daemonize|d' => \$daemonize)
     or pod2usage(2);
 
 $config    = RIFEC::Config->new('file' => $cf_file);
 $log       = RIFEC::Log->new();
 my $server = RIFEC::Server->new();
+
+$log->info($config->say_hello());
+# Daemonize after all the setup, since we want to be able to sanity
+# check parameters etc. while still in the foreground
+if ($daemonize) {
+    if (fileno($log->_fh) == fileno(STDOUT)) {
+	$log->warn("Daemon mode enabled while logging to STDOUT: " .
+		   "Logs and error messages will disappear. " .
+		   "Consider logging to a file instead.");
+    }
+    Proc::Daemon::Init();
+}
+
 $server->run();
 
 __END__
@@ -845,13 +868,15 @@ rifec.pl - receive and store files from Eye-Fi cards
 
 =head1 SYNOPSIS
 
-rifec.pl [--help|-h|-?] [--config configfile]
+rifec.pl [--help|-h|-?] [--config configfile] [--daemonize|-d]
 
  Options:
   --help|-h|-?         Print this help message
   --config|-c CFGFILE  Use CFGFILE instead of default config location
+  --daemonize|-d       Run as a daemon in the background
 
 For modifying the behaviour of the program in other ways, it is
-necessary to use the config file.
+necessary to use the config file.  See the file C<rifec.config>, which
+contains a commented example configuration.
 
 =cut
