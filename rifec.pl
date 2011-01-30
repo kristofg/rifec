@@ -220,6 +220,10 @@ class RIFEC::Log {
 		or die "Unable to open logfile for writing: $!";
 	    $self->_fh($fh);
 	}
+
+	# Enable autoflush on the log filehandle:
+	select($self->_fh);
+	$| = 1;
     }
 
     method _get_preamble(Str $ll) {
@@ -515,7 +519,10 @@ class RIFEC::File {
 				       UNLINK => 0);
 	$log->debug("Writing image '%s' to tempfile '%s'...", $fn, $tmpfile);
 	print { $fh } $tar->get_content($fn);
-	# Should we do some explicit flush() here?
+
+	# Flush + sync
+	select($fh);
+	$| = 1;
 	File::Sync::fsync($fh) or die "Unable to fsync '$tmpfile': $!";
 	close $fh or die "Unable to close FH on '$tmpfile': $!";
 
