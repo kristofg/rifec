@@ -281,7 +281,6 @@ class RIFEC::Log {
 
 class RIFEC::Session {
     use Digest::MD5 qw(md5_hex);
-    use Crypt::Random qw(makerandom_octet);
     use Data::Dumper;
 
     # new() params - things we must know right away:
@@ -293,10 +292,41 @@ class RIFEC::Session {
     # things we learn or figure out after construction:
     has 'server_nonce'  => (isa => 'Str', is => 'ro', builder => '_s_nonce');
     has 'authenticated' => (isa => 'Bool', is => 'rw', default => 0);
+
+    # We used to use the Crypt::Random library for this, but it is not
+    # available through the package manager of all Linux
+    # distributions, and was just a wrapper around reading the data
+    # from /dev/urandom anyway.
+    method getrandom(Int $bytes) {
+	my $random_file = "/dev/urandom";
+	my $output;
+	my $has_read = 0;
+
+	open(my $fh, '<', $random_file)
+	    or die "Unable to open '$random_file' for reading random data: $!";
+
+	while ($has_read < $bytes) {
+	    my $o;
+	    my $read_status = read($fh, $o, $bytes);
+
+	    if (!defined $read_status) {
+		die "Error while reading random data from '$random_file': $!";
+	    }
+	    elsif ($read_status == 0) {
+		die "Reached EOF while reading random data from '$random_file'";
+	    }
+	    $output .= $o;
+	    $has_read += $read_status;
+	}
+
+	close($fh)
+	    or die "Unable to close '$random_file': $!";
+	return $output;
+    }
         
     method _s_nonce() {
-	my $octets = makerandom_octet(Strength => 0, Length => 16);
-	return unpack("H*", $octets); 
+	my $octets = $self->getrandom(16);
+	return unpack("H*", $octets);
     }
     
     # This one mainly consists of sanity checks of the card and
