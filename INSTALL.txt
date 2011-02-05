@@ -19,43 +19,8 @@ config file named "rifec.config" in the current directory (the
 directory you are located in when calling it - not the directory where
 the script is located).
 
-
-Troubleshooting
-===============
-
-When trying to get this software to work, it is probably a good idea
-to:
-
- * Run it WITHOUT the --daemonize/-d option.  This way it stays in the
-   foregound of your terminal, and can output log and error messages.
-
- * In the config file, set "LogLevel=trace".  That way you will get a
-   full log of what happens.  Also, take note of the "LogFile"
-   setting, so you know where to find the log.
-
-In general, if the script encounters errors it will print out "WARN"
-messages to the log.  These will often start with "Died in request
-handling:", followed by the message describing the actual error.
-
-Some error messages are caused by features in the card and/or the
-original Eye-Fi software that this script does not support.  In these
-cases we will reject the image and log an error, since we can't do
-what the card believes we can, and we don't want to fool it.  This may
-be the problem if you see the following errors:
-
-Unsupported transfermode 'XXX' from card 'dads eyefi' (000000000000). at ./rifec.pl line 353.
-
- * If you see this, the card is probably configured to upload images
-   to online services like Flickr or Facebook.  rifec.pl can not do
-   this.  To fix this error, reconfigure your card to upload files
-   (photos, RAW files, videos) to the local computer only; then
-   rifec.pl should accept them.
-
-I don't know how to handle tarballs with >1 files! (XXXX, YYYY) at ./rifec.pl line 536.
-
- * This probably means that the geotagging feature is enabled on the
-   card.  We don't support this either, so it must be disabled in the
-   card config.
+See the file TROUBLESHOOTING.txt for information about troubleshooting
+this program.
 
 
 Dependencies

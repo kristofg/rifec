@@ -1,0 +1,66 @@
+Troubleshooting
+===============
+
+When trying to get this software to work, it is probably a good idea
+to:
+
+ * Run it WITHOUT the --daemonize/-d option.  This way it stays in the
+   foregound of your terminal, and can output log and error messages.
+
+ * In the config file, set "LogLevel=trace".  That way you will get a
+   full log of what happens.  Also, take note of the "LogFile"
+   setting, so you know where to find the log.
+
+ * Configure the camera to take small images while testing.  This way
+   you won't have to wait for the data transfers any longer than
+   necessary.
+
+In general, if the script encounters errors it will print out "WARN"
+messages to the log.  These will often start with "Died in request
+handling:", followed by the message describing the actual error.
+
+Some error messages are caused by features in the card and/or the
+original Eye-Fi software that this script does not support.  In these
+cases we will reject the image and log an error, since we can't do
+what the card believes we can, and we don't want to fool it.  This may
+be the problem if you see the following errors:
+
+Unsupported transfermode 'XXX' from card 'dads eyefi' (000000000000). at ./rifec.pl line 353.
+
+ * If you see this, the card is probably configured to upload images
+   to online services like Flickr or Facebook.  rifec.pl can not do
+   this.  To fix this error, reconfigure your card to upload files
+   (photos, RAW files, videos) to the local computer only.
+
+I don't know how to handle tarballs with >1 files! (XXXX, YYYY) at ./rifec.pl line 536.
+
+ * This probably means that the geotagging feature is enabled on the
+   card.  The geotagging feature is a feature of the Eye-Fi software
+   as well as a feature on the card, so we don't support this either.
+   Disable geotagging in the card configuration to avoid this error.
+
+
+If the daemon starts, but the images never show up, you can check if
+you see something like this in the log:
+
+====
+2011-02-05 01:37:11Z   14024  INFO GetPhotoStatus for 'XXXX.tar' from 'dads eyefi' (000000000000)
+2011-02-05 01:37:12Z   14024 TRACE GetPhotoStatus: $VAR1 = {
+          [ ... ]
+        };
+2011-02-05 01:37:12Z   14024 TRACE GetPhotoStatusResponse: $VAR1 = {
+          [ ... ]
+        };
+2011-02-05 01:47:15Z   14024 DEBUG Closed connection!
+====
+
+In this case, the GetPhotoStatus operation is completed successfully.
+The next operation should have been an Upload, but instead the
+connection is closed ~10 minutes later.  This means that the Upload
+operation was not completed before the connection timeout occurred.
+You may try to increase the SocketTimeout in the config file to 3600
+(1 hour), to see if that helps, but you will probably need to do some
+kind of network level debugging to see if the card is actually
+uploading data, or if it loses the connection for some reason.  Useful
+tools for this are programs like wireshark (http://www.wireshark.org/)
+or iptraf.

@@ -10,12 +10,13 @@ from people who have is welcome.
 
 It runs mainly on Linux, but making it run on other Unix variants
 should be trivial.  It is written in Perl, uses some CPAN modules, and
-is GPL.
+is GPL.  See the file INSTALL.txt for more information on installation
+and dependencies.
 
 This is third-party software; it is not developed nor supported by
 Eye-Fi.  Because of this, there will be limitations in what it can do
-compared to the official Eye-Fi software.  See the "Troubleshooting"
-section in the INSTALL.txt file for more information.
+compared to the official Eye-Fi software. See the file
+TROUBLESHOOTING.txt for more information and help on troubleshooting.
 
 
 Resources and other implementations
@@ -36,7 +37,8 @@ others are:
 
 The Eye-Fi forum thread at
 http://forums.eye.fi/viewtopic.php?f=4&t=270 contains some very useful
-information for everyone interested in making their own server.
+information for everyone interested in running or making their own
+server.
 
 
 Todo
@@ -58,10 +60,18 @@ Things I'm still wondering about
 Ideas
 =====
 
-* Destination subdirectories not just based on date but on camera
-  (fetched from EXIF info)?  At lot more useful if you move your card
-  around - or have a pool of cards and a pool of cameras; would be
-  more interesting if I had several Eye-Fi cards. :)
+* More control over destination directories:
+
+  - Based on file type (jpegs /go/here, raw files /go/there, etc.)
+
+  - Based on EXIF data, so if you have multiple cameras and multiple
+    cards the images from camera A would end up in the same place
+    regardless of which card you put in it.  (Would be more
+    interesting if I had multiple Eye-Fi cards.)
+
+  The biggest problem with these features is the configuration part:
+  How to make this configurable in a robust, easy to understand, and
+  easy to debug way?
 
 
 Things I've decided not to worry about for now

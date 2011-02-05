@@ -336,8 +336,8 @@ class RIFEC::Session {
 	$config->doiknow($args->{'card'});
 
 	# Only accept transfer modes that we recognize.  My card sends
-	# 546, and from basic testing twiddling switches in the config
-	# GUI, it looks like this number is a bitmask:
+	# 546 (0x222), and from basic testing twiddling switches in
+	# the config GUI, it looks like this number is a bitmask:
 	#
 	# 0 1 0 0 0 1 0 0 0 1 0 = 546
 	#                   1   =   2 : Transfer photos to computer
