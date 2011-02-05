@@ -533,8 +533,8 @@ class RIFEC::File {
 
 	my @files = $tar->list_files();
 
-	die sprinf("I don't know how to handle tar balls with >1 files! (%s)",
-		   join(", ", @files))
+	die sprintf("I don't know how to handle tar balls with >1 files! (%s)",
+		    join(", ", @files))
 	    if scalar(@files) > 1;
 
 	my $fn = shift @files;
