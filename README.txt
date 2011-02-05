@@ -12,6 +12,12 @@ It runs mainly on Linux, but making it run on other Unix variants
 should be trivial.  It is written in Perl, uses some CPAN modules, and
 is GPL.
 
+This is third-party software; it is not developed nor supported by
+Eye-Fi.  Because of this, there will be limitations in what it can do
+compared to the official Eye-Fi software.  See the "Troubleshooting"
+section in the INSTALL.txt file for more information.
+
+
 Resources and other implementations
 ===================================
 
@@ -32,11 +38,13 @@ The Eye-Fi forum thread at
 http://forums.eye.fi/viewtopic.php?f=4&t=270 contains some very useful
 information for everyone interested in making their own server.
 
+
 Todo
 ====
 
 * Consider checking the card firmware version in the HTTP header, and
   warn (or die?) if it is a new or unknown version.
+
 
 Things I'm still wondering about
 ================================
@@ -46,6 +54,7 @@ Things I'm still wondering about
 
 * What does the 'flags' field in the GetPhotoStatus request mean?
 
+
 Ideas
 =====
 
@@ -53,6 +62,7 @@ Ideas
   (fetched from EXIF info)?  At lot more useful if you move your card
   around - or have a pool of cards and a pool of cameras; would be
   more interesting if I had several Eye-Fi cards. :)
+
 
 Things I've decided not to worry about for now
 ==============================================
