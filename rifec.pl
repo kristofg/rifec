@@ -371,7 +371,7 @@ class RIFEC::Session {
 }
 
 class RIFEC::File {
-    use File::Temp qw(tempfile);
+    use File::Temp qw();
     use Archive::Tar;
     use Data::Dumper;
     use IO::AtomicFile;
@@ -448,19 +448,16 @@ class RIFEC::File {
 	# card.
 	$self->calculated_digest( $self->_calculate_integritydigest($content) );
 	
-	# Race conditions are not a problem here, because all
-	# instances get unique tempfile names anyway
-	my ($fh, $filename) = tempfile(sprintf(".eyefitransit-%d-XXXXXXXX", $$),
-				       DIR    => $folder,
-				       UNLINK => 1);
-	print { $fh } $content;
-	close $fh
-	    or die "Unable to close FH on '$filename': $!";
+	my $tfh = File::Temp->new(
+	    TEMPLATE => sprintf(".eyefitransit-%d-XXXXXXXX", $$),
+	    DIR      => $folder,
+	    UNLINK   => 0);
+	my $tfn = $tfh->filename;
 
-	# And remember where we put it!
-	$self->_tarfile($filename);
-
-	$log->debug("Saved file '%s' ('%s')", $filename, $self->tarfilename());
+	print $tfh $content;
+	$tfh->close() or die "Unable to close '$tfn': $!";
+	$self->_tarfile($tfn); # Remember where we put it
+	$log->debug("Saved file '%s' ('%s')", $tfn, $self->tarfilename());
     }
     
     method check() {
@@ -521,7 +518,8 @@ class RIFEC::File {
 	    }
 	}
 
-	die sprintf("Unable to write '%s': Destination files already there!", $dst)
+	die sprintf("Unable to write '%s': Destination files already there!",
+		    $dst)
 	    unless $done;
 
 	return $dst;
@@ -543,21 +541,22 @@ class RIFEC::File {
 	    unless $fn =~ /\A [ a-z0-9._-]* \z/xi;
 
 	$self->_file( File::Spec->catfile($folder, $fn) );
-	
-	my ($fh, $tmpfile) =  tempfile(sprintf(".eyefistore-%d-XXXXXXXX", $$),
-				       DIR    => $folder,
-				       UNLINK => 0);
-	$log->debug("Writing image '%s' to tempfile '%s'...", $fn, $tmpfile);
-	print { $fh } $tar->get_content($fn);
 
-	# Flush + sync
-	select($fh);
-	$| = 1;
-	File::Sync::fsync($fh) or die "Unable to fsync '$tmpfile': $!";
-	close $fh or die "Unable to close FH on '$tmpfile': $!";
+	my $tfh = File::Temp->new(
+	    TEMPLATE => sprintf(".eyefistore-%d-XXXXXXXX", $$),
+	    DIR      => $folder,
+	    UNLINK   => 0);
+	my $tfn = $tfh->filename;
+
+	$log->debug("Writing image '%s' to tempfile '%s'...", $fn, $tfn);
+	print $tfh $tar->get_content($fn);
+
+	$tfh->flush() or die "Unable to flush '$tfn': $!";
+	$tfh->sync()  or die "Unable to sync '$tfn': $!";
+	$tfh->close() or die "Unable to close '$tfn': $!";
 
 	# Do the hard linking from the final file name to the temp file:
-	my $outfile = $self->_link_file($tmpfile, $self->_file);
+	my $outfile = $self->_link_file($tfn, $self->_file);
 
 	$log->warn("Destination file '%s' saved as '%s' to avoid collision",
 		   $fn, $outfile)
@@ -566,16 +565,18 @@ class RIFEC::File {
 	$self->_file($outfile); # store it
 
 	$log->debug("Removing tar file '%s'", $self->_tarfile());
-	unlink $self->_tarfile() or die "Unable to unlink tarfile: $!";
-	$log->debug("Removing temp file '%s'", $tmpfile);
-	unlink $tmpfile          or die "Unable to unlink tempfile: $!";
+	unlink $self->_tarfile
+	    or die sprintf("Unable to unlink tarfile '%s': $!",
+			   $self->_tarfile);
+
+	$log->debug("Removing temp file '%s'", $tfn);
+	unlink $tfn or die "Unable to unlink tempfile '$tfn': $!";
 
 	# Chmod it to use the default umask
 	chmod 0666 & ~umask(), $self->_file
 	    or $log->warn("Unable to chmod '%s'", $self->file);
 	
-	$log->info("File '%s' saved, files '%s' and '%s' deleted",
-		   $self->_file(), $self->_tarfile(), $tmpfile);
+	$log->info("File '%s' saved", $self->_file());
 	return 'ok';
     }
 }
