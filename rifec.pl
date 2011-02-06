@@ -1,7 +1,7 @@
 #! /usr/bin/perl
 #
 # RIFEC.pl: Receive Images From Eye-Fi Cards
-# Copyright (C) 2011 Kristoffer Gleditsch
+# Copyright (C) 2011 Kristoffer Gleditsch, https://github.com/kristofg
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -190,6 +190,7 @@ class RIFEC::Config {
 class RIFEC::Log {
     use Data::Dumper;
     use HTTP::Date qw();
+    use IO::File;
 
     has '_fh' => (is      => 'rw',
 		  default => sub { \*STDOUT });
@@ -210,20 +211,16 @@ class RIFEC::Log {
     }
 
     method DEMOLISH () {
-	close $self->_fh
+	$self->_fh->close()
 	    or die "Unable to close logfile while exiting: $!";
     }
 
     method open() {
 	if (my $lf = $config->logfile()) {
-	    open(my $fh, '>>', $lf)
-		or die "Unable to open logfile for writing: $!";
+	    my $fh = IO::File->new($lf, O_WRONLY|O_APPEND)
+		or die "Unable to open logfile '$lf' for writing: $!";
 	    $self->_fh($fh);
 	}
-
-	# Enable autoflush on the log filehandle:
-	select($self->_fh);
-	$| = 1;
     }
 
     method _get_preamble(Str $ll) {
@@ -258,6 +255,7 @@ class RIFEC::Log {
 	    $out .= ($out =~ /\n\z/) ? "" : "\n";
 
 	    print { $self->_fh } $out;
+	    $self->_fh->flush();
 	}
     }
 
@@ -281,6 +279,7 @@ class RIFEC::Log {
 
 class RIFEC::Session {
     use Digest::MD5 qw(md5_hex);
+    use IO::File;
     use Data::Dumper;
 
     # new() params - things we must know right away:
@@ -302,12 +301,12 @@ class RIFEC::Session {
 	my $output;
 	my $has_read = 0;
 
-	open(my $fh, '<', $random_file)
+	my $fh = new IO::File($random_file, "r")
 	    or die "Unable to open '$random_file' for reading random data: $!";
 
 	while ($has_read < $bytes) {
 	    my $o;
-	    my $read_status = read($fh, $o, $bytes);
+	    my $read_status = $fh->read($o, $bytes);
 
 	    if (!defined $read_status) {
 		die "Error while reading random data from '$random_file': $!";
@@ -319,7 +318,7 @@ class RIFEC::Session {
 	    $has_read += $read_status;
 	}
 
-	close($fh)
+	$fh->close()
 	    or die "Unable to close '$random_file': $!";
 	return $output;
     }
@@ -374,9 +373,7 @@ class RIFEC::File {
     use File::Temp qw();
     use Archive::Tar;
     use Data::Dumper;
-    use IO::AtomicFile;
     use File::Spec;
-    use File::Sync qw();
     use Digest::MD5 qw();
 
     has 'session'       => (isa => 'RIFEC::Session', is => 'ro', required => 1);
@@ -525,52 +522,61 @@ class RIFEC::File {
 	return $dst;
     }
 
-    method extract() {
+    method _extract_tarfile() {
 	my $tar = Archive::Tar->new($self->_tarfile());
-	my $folder = $config->folder($self->session()->card());
 
 	my @files = $tar->list_files();
-
 	die sprintf("I don't know how to handle tarballs with >1 files! (%s)",
 		    join(", ", @files))
 	    if scalar(@files) > 1;
 
 	my $fn = shift @files;
-	
 	die sprintf("Illegal name of file inside tarball: '%s'", $fn)
 	    unless $fn =~ /\A [ a-z0-9._-]* \z/xi;
 
-	$self->_file( File::Spec->catfile($folder, $fn) );
-
 	my $tfh = File::Temp->new(
 	    TEMPLATE => sprintf(".eyefistore-%d-XXXXXXXX", $$),
-	    DIR      => $folder,
+	    DIR      => $config->folder( $self->session()->card() ),
 	    UNLINK   => 0);
 	my $tfn = $tfh->filename;
 
 	$log->debug("Writing image '%s' to tempfile '%s'...", $fn, $tfn);
-	print $tfh $tar->get_content($fn);
 
+	print $tfh $tar->get_content($fn);
 	$tfh->flush() or die "Unable to flush '$tfn': $!";
 	$tfh->sync()  or die "Unable to sync '$tfn': $!";
 	$tfh->close() or die "Unable to close '$tfn': $!";
 
-	# Do the hard linking from the final file name to the temp file:
-	my $outfile = $self->_link_file($tfn, $self->_file);
+	# Return the filename of the file in the tarball plus the
+	# tempfile this file is currently stored in:
+	return ($fn, $tfn);
+    }
+
+    method extract() {
+	# Extract the tar file and save the contents to a temp file:
+	my ($filename, $tempcontent) = $self->_extract_tarfile();
+
+	# Do the hard linking from the final file name to the temp
+	my $full_filename =
+	    File::Spec->catfile($config->folder( $self->session->card ),
+				$filename);
+
+	my $outfile = $self->_link_file($tempcontent, $full_filename);
 
 	$log->warn("Destination file '%s' saved as '%s' to avoid collision",
-		   $fn, $outfile)
-	    unless $outfile eq $self->_file;
+		   $full_filename, $outfile)
+	    unless $outfile eq $full_filename;
 
-	$self->_file($outfile); # store it
+	$self->_file($outfile); # Remember where we put it
 
 	$log->debug("Removing tar file '%s'", $self->_tarfile());
 	unlink $self->_tarfile
 	    or die sprintf("Unable to unlink tarfile '%s': $!",
 			   $self->_tarfile);
 
-	$log->debug("Removing temp file '%s'", $tfn);
-	unlink $tfn or die "Unable to unlink tempfile '$tfn': $!";
+	$log->debug("Removing temp file '%s'", $tempcontent);
+	unlink $tempcontent
+	    or die "Unable to unlink tempfile '$tempcontent': $!";
 
 	# Chmod it to use the default umask
 	chmod 0666 & ~umask(), $self->_file
@@ -770,7 +776,7 @@ class RIFEC::Handler {
 	$header->content_type         ('text/xml');
 	$header->content_type_charset ('UTF-8');
 	$header->content_length       (length($raw));
-	$header->server               ('rifec.pl v0.4');
+	$header->server               ('rifec.pl v0.5');
 	$header->date                 (time);
 	$header->header               ('pragma' => 'no-cache');
 	
@@ -893,7 +899,7 @@ $log->info($config->say_hello());
 # Daemonize after all the setup, since we want to be able to sanity
 # check parameters etc. while still in the foreground
 if ($daemonize) {
-    if (fileno($log->_fh) == fileno(STDOUT)) {
+    if ($log->_fh->fileno == fileno(STDOUT)) {
 	$log->warn("Daemon mode enabled while logging to STDOUT: " .
 		   "Logs and error messages will disappear. " .
 		   "Consider logging to a file instead.");

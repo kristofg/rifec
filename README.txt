@@ -73,6 +73,16 @@ Ideas
   How to make this configurable in a robust, easy to understand, and
   easy to debug way?
 
+* Hooks for running custom scripts on successful upload.  Would
+  probably solve the previous problem as well, but has pretty much the
+  same problems, too.
+
+* Change the usage of HTTP::Daemon::get_request() so that the Upload
+  operation is sent to our code before the entire HTTP operation is
+  complete: Would allow better progress notification ("upload in
+  progress, 10% received") and probably make (network) debugging
+  easier, but is a bit more complex on the code side.
+
 
 Things I've decided not to worry about for now
 ==============================================
