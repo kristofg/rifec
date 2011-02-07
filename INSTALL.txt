@@ -37,6 +37,7 @@ perl-Archive-Tar
 perl-IO-stringy
 perl-XML-Simple
 perl-Proc-Daemon
+perl-Params-Validate
 
 Un Ubuntu, apt-get installing the following packages should do the
 trick:
@@ -50,3 +51,4 @@ libarchive-tar-perl
 libio-stringy-perl
 libxml-simple-perl
 libproc-daemon-perl
+libparams-validate-perl

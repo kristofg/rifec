@@ -50,7 +50,7 @@ class RIFEC::Config {
     has '_known_cards' => (isa     => 'ArrayRef',
 			   is      => 'rw',
 			   default => sub { [] });
-    
+
     # Share this across all uploads in a session, so we don't hand out
     # exactly the same file id all the time
     has '_counter' => (isa => 'Int', is => 'rw', default => 0);
@@ -89,14 +89,14 @@ class RIFEC::Config {
 	    || die "Configuration not initialized yet!";
 	my %card;
 	$self->_known_cards( () );
-	
+
 	foreach my $s ($c->Sections()) {
 	    if ($s eq 'main') {
 		next;
 	    }
 	    elsif ($s =~ /\Acard (.*?)\z/i) {
 		my $cardname = $1;
-		
+
 		my $mac = $self->_get($s, 'MacAddress');
 		$mac = $self->_normalize_mac($mac);
 
@@ -138,7 +138,7 @@ class RIFEC::Config {
     method loglevel() {
 	return $self->_get('main', 'LogLevel');
     }
-    
+
     method logfile() {
 	return $self->_get('main', 'LogFile');
     }
@@ -154,7 +154,7 @@ class RIFEC::Config {
     # Per-card settings:
     method doiknow(Str $card) {
 	my $mac = $self->_normalize_mac($card);
-	
+
 	die sprintf("Sorry, I don't know the card with MAC %s", uc $mac)
 	    unless grep { $mac eq $_ } @{ $self->_known_cards };
 
@@ -170,7 +170,7 @@ class RIFEC::Config {
 	my $mac = $self->_normalize_mac($card);
 	return $self->_card->{$mac}->{'folder'};
     }
-    
+
     method cardname(Str $card) {
 	my $mac = $self->_normalize_mac($card);
 	return $self->_card->{$mac}->{'name'};
@@ -180,7 +180,7 @@ class RIFEC::Config {
     method counter {
 	return $self->_counter();
     }
-    
+
     method bump_counter {
 	return $self->_counter( $self->_counter() + 1 );
     }
@@ -203,9 +203,9 @@ class RIFEC::Log {
 		      'warn'  => 4,
 		      'info'  => 3,
 		      'debug' => 2,
-		      'trace' => 1, 
+		      'trace' => 1,
 		      }});
-    
+
     method BUILD (HashRef $args) {
 	$self->open();
     }
@@ -229,7 +229,7 @@ class RIFEC::Log {
 		       $$,
 		       uc $ll);
     }
-    
+
     method _print_if(Str $loglevel, Str @str) {
 	# Sanity check.
 	foreach my $ll ($loglevel, $config->loglevel) {
@@ -240,7 +240,7 @@ class RIFEC::Log {
 	if ($self->_ll->{lc $loglevel} >= $self->_ll->{lc $config->loglevel})
 	{
 	    my $out = $self->_get_preamble($loglevel);
-	    
+
 	    # figure out if it's a (s)printf or not:
 	    if (scalar(@str) == 1) {
 		$out .= $str[0];
@@ -322,12 +322,12 @@ class RIFEC::Session {
 	    or die "Unable to close '$random_file': $!";
 	return $output;
     }
-        
+
     method _s_nonce() {
 	my $octets = $self->getrandom(16);
 	return unpack("H*", $octets);
     }
-    
+
     # This one mainly consists of sanity checks of the card and
     # session params
     method BUILD(HashRef $args) {
@@ -357,13 +357,13 @@ class RIFEC::Session {
     }
 
     method server_credential {
-	return md5_hex(pack("H*", $self->card()), 
+	return md5_hex(pack("H*", $self->card()),
 		       pack("H*", $self->card_nonce()),
 		       pack("H*", $config->uploadkey($self->card())));
     }
-    
+
     method card_credential {
-	return md5_hex(pack("H*", $self->card()), 
+	return md5_hex(pack("H*", $self->card()),
 		       pack("H*", $config->uploadkey($self->card())),
 		       pack("H*", $self->server_nonce()));
     }
@@ -385,11 +385,11 @@ class RIFEC::File {
 
     has 'integritydigest'   => (isa => 'Str', is => 'rw', required => 0);
     has 'calculated_digest' => (isa => 'Str', is => 'rw', required => 0);
-    
+
     has '_tarfile' => (isa => 'Str', is => 'rw');
     has '_file'    => (isa => 'Str', is => 'rw');
 
-    # See http://forums.eye.fi/viewtopic.php?f=4&t=270#p3874 
+    # See http://forums.eye.fi/viewtopic.php?f=4&t=270#p3874
     #
     # This is an old-fashioned sub, not a method, because of execution
     # speed.  When calling this for every 512 bytes in a 20MB file,
@@ -408,13 +408,13 @@ class RIFEC::File {
 
     method _calculate_integritydigest(Str $block) {
 	$log->debug("Calculating integrity digest...");
-	
+
 	# Make sure it is 512-block aligned (it should be)
 	die "Content block not 512-byte aligned!"
 	    if length($block) % 512;
-	
+
 	my $md5 = Digest::MD5->new();
-	
+
 	my $i = 0;
 	while ($i < length($block)) {
 	    $md5->add(
@@ -424,7 +424,7 @@ class RIFEC::File {
 	$md5->add(pack("H*", $config->uploadkey($self->session()->card())));
 
 	my $md5sum = $md5->hexdigest();
-	
+
 	$log->debug("...done: %s", uc $md5sum);
 	return lc $md5sum;
     }
@@ -432,9 +432,9 @@ class RIFEC::File {
     method store_content(Str $content) {
 	my $folder = $config->folder($self->session()->card());
 
-	die "Destionation directory not found" 
+	die "Destionation directory not found"
 	    unless -e $folder;
-	die "Destionation directory not a directory" 
+	die "Destionation directory not a directory"
 	    unless -d $folder;
 	die "Destionation directory not writeable"
 	    unless -w $folder;
@@ -444,7 +444,7 @@ class RIFEC::File {
 	# content is received before the integritydigest from the
 	# card.
 	$self->calculated_digest( $self->_calculate_integritydigest($content) );
-	
+
 	my $tfh = File::Temp->new(
 	    TEMPLATE => sprintf(".eyefitransit-%d-XXXXXXXX", $$),
 	    DIR      => $folder,
@@ -456,7 +456,7 @@ class RIFEC::File {
 	$self->_tarfile($tfn); # Remember where we put it
 	$log->debug("Saved file '%s' ('%s')", $tfn, $self->tarfilename());
     }
-    
+
     method check() {
 	# First that the size matches what the card said:
 	my $stat_size = (stat($self->_tarfile))[7];
@@ -502,7 +502,7 @@ class RIFEC::File {
 	my $max   = 100;
 	my $dst   = $destination_name;
 	my $done  = undef;
-	
+
 	while (!$done && $tries < $max) {
 	    if (link $tempfile, $dst) {
 		$done = $dst;
@@ -581,7 +581,7 @@ class RIFEC::File {
 	# Chmod it to use the default umask
 	chmod 0666 & ~umask(), $self->_file
 	    or $log->warn("Unable to chmod '%s'", $self->file);
-	
+
 	$log->info("File '%s' saved", $self->_file());
 	return 'ok';
     }
@@ -593,6 +593,8 @@ class RIFEC::Handler {
     use Encode qw();
     use HTTP::Message;
     use HTTP::Status qw(:constants);
+    use Params::Validate qw(validate);
+    use Carp qw(cluck);
 
     has 'session' => (isa => 'RIFEC::Session', is => 'rw', required => 0);
 
@@ -601,7 +603,7 @@ class RIFEC::Handler {
     # the XML ourselves.  Most of those hoops are hidden here:
     method _wrap_response(Str $blockname, HashRef $values) {
 	$log->trace($blockname . ": " . Dumper($values));
-	
+
 	# { a => b, c => d } --> { a => [ b ], c => [ d ] }
 	foreach my $key (keys %$values) {
 	    if (!ref($values->{$key})) {
@@ -622,15 +624,61 @@ class RIFEC::Handler {
 	return \%wrap;
     }
 
+    # Do basic sanity checking of the parameters coming in.
+    # XML::Simple will fail on XML syntax, this sub does some reality
+    # checking on the contents.
+    method _extract_params(HashRef $body, Str $bodyname) {
+        # Quite a few repetitions of some of the regexps.  Think of
+        # something there.
+        my %paramspec_of = (
+            "ns1:StartSession" => {
+                'macaddress'            => { regex => qr|\A [a-z0-9]{12} \z|xi },
+                'transfermodetimestamp' => { regex => qr|\A \d{1,32}     \z|xi },
+                'cnonce'                => { regex => qr|\A [a-z0-9]{32} \z|xi },
+                'transfermode'          => { regex => qr|\A \d{1,12}     \z|xi },
+            },
+            "ns1:GetPhotoStatus" => {
+                'filesize'      => { regex => qr|\A \d{1,32}      \z|xi },
+                'flags'         => { regex => qr|\A \d{1,12}      \z|xi },
+                'filename'      => { regex => qr|\A [ a-z0-9._-]+ \z|xi },
+                'macaddress'    => { regex => qr|\A [a-z0-9]{12}  \z|xi },
+                'credential'    => { regex => qr|\A [a-z0-9]{32}  \z|xi },
+                'filesignature' => { regex => qr|\A [a-z0-9]{32}  \z|xi },
+            },
+            "ns1:UploadPhoto" => {
+                'filesize'      => { regex => qr|\A \d{1,32}      \z|xi },
+                'flags'         => { regex => qr|\A \d{1,12}      \z|xi },
+                'filename'      => { regex => qr|\A [ a-z0-9._-]+ \z|xi },
+                'macaddress'    => { regex => qr|\A [a-z0-9]{12}  \z|xi },
+                'fileid'        => { regex => qr|\A \d{1,12}      \z|xi },
+                'encryption'    => { regex => qr|\A [a-z]{1,32}   \z|xi },
+                'filesignature' => { regex => qr|\A [a-z0-9]{32}  \z|xi},
+            },
+            "ns1:MarkLastPhotoInRoll" => {
+                'macaddress'    => { regex => qr|\A [a-z0-9]{12}  \z|xi },
+                'mergedelta'    => { regex => qr|\A \d{1,32}      \z|xi },
+            },
+        );
+
+        # MooseX::Declare has checked that $body is a HashRef already,
+        # so we can go straight on the keys inside it:
+        cluck "No element '$bodyname' in body"
+            unless exists $body->{$bodyname} && defined $body->{$bodyname};
+        cluck "Element '$bodyname' is not a hash ref"
+            unless ref($body->{$bodyname}) eq 'HASH';
+
+        Params::Validate::validation_options('stack_skip' => 2);
+        validate( @{[ $body->{$bodyname} ]}, $paramspec_of{$bodyname} );
+    }
+
     method startsession(HashRef $soapbody) {
-	# Unwrap the real params from the startsession element:
-	my $params = $soapbody->{'ns1:StartSession'};
+	my $params = $self->_extract_params($soapbody, "ns1:StartSession");
 
 	$log->info("StartSession from '%s' (%s)",
 		   $config->cardname($params->{'macaddress'}) || "(unknown)",
 		   $params->{'macaddress'});
 	$log->trace("StartSession: " . Dumper($params));
-	
+
 	my $s = RIFEC::Session->new(
 	    'card'                  => $params->{'macaddress'},
 	    'card_nonce'            => $params->{'cnonce'},
@@ -638,7 +686,7 @@ class RIFEC::Handler {
 	    'transfermodetimestamp' => $params->{'transfermodetimestamp'});
 
 	$self->session($s);
-	
+
 	return $self->_wrap_response(
 	    'StartSessionResponse',
 	    {
@@ -651,27 +699,27 @@ class RIFEC::Handler {
     }
 
     method getphotostatus(HashRef $soapbody) {
-	my $params = $soapbody->{'ns1:GetPhotoStatus'};
+	my $params = $self->_extract_params($soapbody, "ns1:GetPhotoStatus");
 
 	$log->info("GetPhotoStatus for '%s' from '%s' (%s)",
 		   $params->{'filename'},
 		   $config->cardname($self->session->card),
 		   $self->session->card);
 	$log->trace("GetPhotoStatus: " . Dumper($params));
-	
+
 	my $s = $self->session();
-	
+
 	# Verify a valid session & credential: This is the credential
 	# check before uploading photos.
-	if (lc $params->{'macaddress'} ne lc $s->card()) 
+	if (lc $params->{'macaddress'} ne lc $s->card())
 	{
-	    die sprintf("MAC from card != session MAC (%s != %s)", 
+	    die sprintf("MAC from card != session MAC (%s != %s)",
 			lc $params->{'macaddress'},
 			lc $s->card());
 	}
-	if (lc $params->{'credential'} ne lc $s->card_credential()) 
+	if (lc $params->{'credential'} ne lc $s->card_credential())
 	{
-	    die sprintf("Card credential invalid (%s != %s)", 
+	    die sprintf("Card credential invalid (%s != %s)",
 			lc $params->{'credential'},
 			lc $s->card_credential());
 	}
@@ -683,17 +731,22 @@ class RIFEC::Handler {
 	    {
 		'fileid' => $config->counter(),
 		'offset' => '0',
-	    });	
+	    });
     }
 
     method _soapenvelope($part where { $_->isa('HTTP::Message') }) {
 	my $content = $part->content();
 
 	my $soapbody = XML::Simple::XMLin($content, ForceArray => 0);
-	my $pi = $soapbody->{'SOAP-ENV:Body'}->{'ns1:UploadPhoto'};
-	
+
+        die "Unable to find SOAP Body in Upload envelope"
+            unless (ref($soapbody) eq 'HASH' &&
+                    exists $soapbody->{'SOAP-ENV:Body'});
+
+	my $pi = $self->_extract_params($soapbody->{'SOAP-ENV:Body'},
+                                        "ns1:UploadPhoto");
 	$log->trace("Upload SoapEnvelope: " . Dumper($pi));
-	
+
 	return RIFEC::File->new(
 	    'tarfilename'   => $pi->{'filename'},
 	    'size'          => $pi->{'filesize'},
@@ -701,15 +754,15 @@ class RIFEC::Handler {
 	    'filesignature' => $pi->{'filesignature'},
 	    'session'       => $self->session());
     }
-    
+
     method upload($request where { $_->isa('HTTP::Request') }) {
 	$log->info("Upload from '%s' (%s)",
 		   $config->cardname($self->session->card),
 		   $self->session->card);
-	
+
 	die "Session un-authenticated, upload is a no-go"
 	    unless $self->session()->authenticated();
-	
+
 	my $file;
 
 	my @expected_parts = ('SOAPENVELOPE', 'FILENAME', 'INTEGRITYDIGEST');
@@ -722,47 +775,47 @@ class RIFEC::Handler {
 	    my $expect_partname = shift @expected_parts;
 	    die sprintf("Expected part '%s', got '%s'", $expect_partname, $partname)
 		unless $partname eq $expect_partname;
-	    
-	    if ($partname eq 'SOAPENVELOPE') 
+
+	    if ($partname eq 'SOAPENVELOPE')
 	    {
 		# The RIFEC::File object is initialized from the values
 		# in the SOAP envelope:
 		$file = $self->_soapenvelope($part);
 	    }
-	    elsif ($partname eq 'FILENAME') 
+	    elsif ($partname eq 'FILENAME')
 	    {
 		# Sanity checking:
 		my ($fn) = $part->headers_as_string() =~ /filename="(.*?)"/;
 		die "Unable to extract filename from part header" unless $fn;
-		die "File name differs from RIFEC::File state" 
+		die "File name differs from RIFEC::File state"
 		    unless $fn eq $file->tarfilename();
 		$file->store_content($part->content());
 	    }
-	    elsif ($partname eq 'INTEGRITYDIGEST') 
+	    elsif ($partname eq 'INTEGRITYDIGEST')
 	    {
 		$file->integritydigest($part->content());
 	    }
 	}
 
 	my $ok = $file->check() && $file->extract();
-	
+
 	return $self->_wrap_response(
 	    'UploadPhotoResponse',
 	    {
 		'success' => $ok ? 'true' : 'false',
-	    });	
+	    });
     }
-    
+
     method marklastphotoinroll(HashRef $soapbody) {
-	my $params = $soapbody->{'ns1:MarkLastPhotoInRoll'};
+	my $params = $self->_extract_params($soapbody, "ns1:MarkLastPhotoInRoll");
 
 	$log->info("MarkLastPhotoInRoll from '%s' (%s)",
 		   $config->cardname($self->session->card),
 		   $self->session->card);
 	$log->trace("MarkLastPhotoInRoll: " . Dumper($params));
-	
+
 	# As far as I can figure out, there is not much for us to do
-	# here.	
+	# here.
 	return $self->_wrap_response('MarkLastPhotoInRollResponse', {});
     }
 
@@ -779,7 +832,7 @@ class RIFEC::Handler {
 	$header->server               ('rifec.pl v0.5');
 	$header->date                 (time);
 	$header->header               ('pragma' => 'no-cache');
-	
+
 	return HTTP::Response->new($status, $message, $header, $raw);
     }
 
@@ -788,16 +841,16 @@ class RIFEC::Handler {
 	my %handlerof = ('"urn:StartSession"'        => \&startsession,
 			 '"urn:GetPhotoStatus"'      => \&getphotostatus,
 			 '"urn:MarkLastPhotoInRoll"' => \&marklastphotoinroll);
-	
+
 	eval {
 	    my $answer;
-	    
-	    if ($request->method eq 'POST' && 
-		$request->uri->path eq "/api/soap/eyefilm/v1") 
-	    { 
+
+	    if ($request->method eq 'POST' &&
+		$request->uri->path eq "/api/soap/eyefilm/v1")
+	    {
 		my $action = $request->header('SOAPAction');
 		my $body = XML::Simple::XMLin( $request->content(), ForceArray => 0 );
-		
+
 		if (ref($handlerof{$action}) eq 'CODE') {
 		    $answer = $handlerof{$action}->($self, $body->{'SOAP-ENV:Body'});
 		}
@@ -805,25 +858,25 @@ class RIFEC::Handler {
 		    die "Found no handler for [$action]";
 		}
 	    }
-	    elsif ($request->method eq 'POST' && 
+	    elsif ($request->method eq 'POST' &&
 		   $request->uri->path eq "/api/soap/eyefilm/v1/upload")
 	    {
 		$answer = $self->upload($request);
 	    }
 	    else {
 		die sprintf("Unknown method/path combo: '%s' '%s'",
-			    $request->method, 
+			    $request->method,
 			    $request->uri->path);
 	    }
-	    
+
 	    $reply = $self->_make_http_reply(HTTP_OK, "OK",
-					     XML::Simple::XMLout($answer, 
+					     XML::Simple::XMLout($answer,
 								 KeepRoot => 1,
 								 XMLDecl  => 1));
 	};
 	if ($@) {
 	    $log->warn("Died in request handling: " . $@);
-	    $reply = $self->_make_http_reply(HTTP_INTERNAL_SERVER_ERROR, 
+	    $reply = $self->_make_http_reply(HTTP_INTERNAL_SERVER_ERROR,
 					     "Internal server error",
 					     "<title>My handler died :(</title>");
 	}
@@ -842,19 +895,19 @@ class RIFEC::Server {
 				  ReuseAddr => 1)
 	    || die "Unable to instantiate HTTP Daemon: $!";
 	$log->info("Listening on %s", $d->url());
-	
-	while (my $conn = $d->accept()) 
+
+	while (my $conn = $d->accept())
 	{
 	    $log->debug("Connect from %s:%d", $conn->peerhost(), $conn->peerport());
 	    $config->bump_counter();
-	    
+
 	    my $pid = fork();
 	    if ($pid == 0) { # Child
 		$conn->timeout($config->sockettimeout());
-		my $handler = RIFEC::Handler->new();		
+		my $handler = RIFEC::Handler->new();
 		while (my $req = $conn->get_request())
 		{
-		    $log->debug("%s:%d -> %s %s", 
+		    $log->debug("%s:%d -> %s %s",
 				$conn->peerhost(), $conn->peerport(),
 				$req->method, $req->uri->path);
 		    # All sanity checking is done in the handler
@@ -862,10 +915,10 @@ class RIFEC::Server {
 		    $conn->send_response($http_reply);
 		}
 		$log->debug("Closed connection!");
-		
+
 		$conn->close();
 		undef($conn);
-		undef($handler);	    
+		undef($handler);
 		exit 0;
 	    }
 	    else { # Parent
