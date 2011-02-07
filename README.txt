@@ -47,6 +47,8 @@ Todo
 * Consider checking the card firmware version in the HTTP header, and
   warn (or die?) if it is a new or unknown version.
 
+* Limit the number of forked threads, to make it just a little less
+  DoS'able
 
 Things I'm still wondering about
 ================================
