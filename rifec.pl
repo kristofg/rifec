@@ -389,6 +389,12 @@ class RIFEC::File {
     has '_tarfile' => (isa => 'Str', is => 'rw');
     has '_file'    => (isa => 'Str', is => 'rw');
 
+    # If your camera produces files containing other characters than I
+    # have thought of here, you may have to change this regexp.  (All
+    # places checking the file name should use this, so it should be
+    # sufficient to update this one place).
+    our $filename_regexp = qr|\A [ a-z0-9._-]* \z|xi;
+
     # See http://forums.eye.fi/viewtopic.php?f=4&t=270#p3874
     #
     # This is an old-fashioned sub, not a method, because of execution
@@ -532,7 +538,7 @@ class RIFEC::File {
 
 	my $fn = shift @files;
 	die sprintf("Illegal name of file inside tarball: '%s'", $fn)
-	    unless $fn =~ /\A [ a-z0-9._-]* \z/xi;
+	    unless $fn =~ $RIFEC::File::filename_regexp;
 
 	my $tfh = File::Temp->new(
 	    TEMPLATE => sprintf(".eyefistore-%d-XXXXXXXX", $$),
@@ -628,35 +634,45 @@ class RIFEC::Handler {
     # XML::Simple will fail on XML syntax, this sub does some reality
     # checking on the contents.
     method _extract_params(HashRef $body, Str $bodyname) {
-        # Quite a few repetitions of some of the regexps.  Think of
-        # something there.
+        # The filename regexp lives in the ::File class since it is
+        # used in other places as well
+        my $md5sum       = qr|\A [a-z0-9]{32} \z|xi;
+        my $macaddress   = qr|\A [a-z0-9]{12} \z|xi;
+        # We are not too concerned with the length of the number: We
+        # do syntax checking here, the handling code can take care of
+        # the semantics.
+        my $number       = qr|\A \d+          \z|xi;
+        # Again, no too worried about the length of the string, as
+        # long as it's syntactically correct:
+        my $simplestring = qr|\A [a-z]+       \z|xi;
+
         my %paramspec_of = (
             "ns1:StartSession" => {
-                'macaddress'            => { regex => qr|\A [a-z0-9]{12} \z|xi },
-                'transfermodetimestamp' => { regex => qr|\A \d{1,32}     \z|xi },
-                'cnonce'                => { regex => qr|\A [a-z0-9]{32} \z|xi },
-                'transfermode'          => { regex => qr|\A \d{1,12}     \z|xi },
+                'macaddress'            => { regex => $macaddress },
+                'transfermodetimestamp' => { regex => $number     },
+                'cnonce'                => { regex => $md5sum     },
+                'transfermode'          => { regex => $number     },
             },
             "ns1:GetPhotoStatus" => {
-                'filesize'      => { regex => qr|\A \d{1,32}      \z|xi },
-                'flags'         => { regex => qr|\A \d{1,12}      \z|xi },
-                'filename'      => { regex => qr|\A [ a-z0-9._-]+ \z|xi },
-                'macaddress'    => { regex => qr|\A [a-z0-9]{12}  \z|xi },
-                'credential'    => { regex => qr|\A [a-z0-9]{32}  \z|xi },
-                'filesignature' => { regex => qr|\A [a-z0-9]{32}  \z|xi },
+                'filesize'      => { regex => $number                        },
+                'flags'         => { regex => $number                        },
+                'filename'      => { regex => $RIFEC::File::filename_regexp  },
+                'macaddress'    => { regex => $macaddress                    },
+                'credential'    => { regex => $md5sum                        },
+                'filesignature' => { regex => $md5sum                        },
             },
             "ns1:UploadPhoto" => {
-                'filesize'      => { regex => qr|\A \d{1,32}      \z|xi },
-                'flags'         => { regex => qr|\A \d{1,12}      \z|xi },
-                'filename'      => { regex => qr|\A [ a-z0-9._-]+ \z|xi },
-                'macaddress'    => { regex => qr|\A [a-z0-9]{12}  \z|xi },
-                'fileid'        => { regex => qr|\A \d{1,12}      \z|xi },
-                'encryption'    => { regex => qr|\A [a-z]{1,32}   \z|xi },
-                'filesignature' => { regex => qr|\A [a-z0-9]{32}  \z|xi},
+                'filesize'      => { regex => $number                        },
+                'flags'         => { regex => $number                        },
+                'filename'      => { regex => $RIFEC::File::filename_regexp  },
+                'macaddress'    => { regex => $macaddress                    },
+                'fileid'        => { regex => $number                        },
+                'encryption'    => { regex => $simplestring                  },
+                'filesignature' => { regex => $md5sum                        },
             },
             "ns1:MarkLastPhotoInRoll" => {
-                'macaddress'    => { regex => qr|\A [a-z0-9]{12}  \z|xi },
-                'mergedelta'    => { regex => qr|\A \d{1,32}      \z|xi },
+                'macaddress'    => { regex => $macaddress },
+                'mergedelta'    => { regex => $number     },
             },
         );
 
