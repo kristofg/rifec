@@ -55,7 +55,7 @@ class RIFEC::Config {
     # exactly the same file id all the time
     has '_counter' => (isa => 'Int', is => 'rw', default => 0);
 
-    method _read_inifile() {
+    method _read_inifile {
 	# Fall back to default if undef or empty:
 	$self->file("rifec.config") unless $self->file;
 
@@ -84,7 +84,7 @@ class RIFEC::Config {
 	return lc $ret;
     }
 
-    method _build_cardlist() {
+    method _build_cardlist {
 	my $c = $self->_cfg()
 	    || die "Configuration not initialized yet!";
 	my %card;
@@ -128,26 +128,26 @@ class RIFEC::Config {
 	return $v;
     }
 
-    method say_hello() {
+    method say_hello {
 	return sprintf("Config file '%s', %d card(s) configured",
 		       Cwd::abs_path($self->file),
 		       scalar keys %{ $self->_card });
     }
 
     # Actual config accessors:
-    method loglevel() {
+    method loglevel {
 	return $self->_get('main', 'LogLevel');
     }
 
-    method logfile() {
+    method logfile {
 	return $self->_get('main', 'LogFile');
     }
 
-    method port() {
+    method port {
 	return $self->_get('main', 'Port');
     }
 
-    method sockettimeout() {
+    method sockettimeout {
 	return $self->_get('main', 'SocketTimeout');
     }
 
@@ -206,16 +206,16 @@ class RIFEC::Log {
 		      'trace' => 1,
 		      }});
 
-    method BUILD (HashRef $args) {
+    method BUILD(HashRef $args) {
 	$self->open();
     }
 
-    method DEMOLISH () {
+    method DEMOLISH {
 	$self->_fh->close()
 	    or die "Unable to close logfile while exiting: $!";
     }
 
-    method open() {
+    method open {
 	if (my $lf = $config->logfile()) {
 	    my $fh = IO::File->new($lf, O_WRONLY|O_APPEND)
 		or die "Unable to open logfile '$lf' for writing: $!";
@@ -323,7 +323,7 @@ class RIFEC::Session {
 	return $output;
     }
 
-    method _s_nonce() {
+    method _s_nonce {
 	my $octets = $self->getrandom(16);
 	return unpack("H*", $octets);
     }
@@ -463,7 +463,7 @@ class RIFEC::File {
 	$log->debug("Saved file '%s' ('%s')", $tfn, $self->tarfilename());
     }
 
-    method check() {
+    method check {
 	# First that the size matches what the card said:
 	my $stat_size = (stat($self->_tarfile))[7];
 	if ($stat_size == $self->size)
@@ -528,7 +528,7 @@ class RIFEC::File {
 	return $dst;
     }
 
-    method _extract_tarfile() {
+    method _extract_tarfile {
 	my $tar = Archive::Tar->new($self->_tarfile());
 
 	my @files = $tar->list_files();
@@ -558,7 +558,7 @@ class RIFEC::File {
 	return ($fn, $tfn);
     }
 
-    method extract() {
+    method extract {
 	# Extract the tar file and save the contents to a temp file:
 	my ($filename, $tempcontent) = $self->_extract_tarfile();
 
@@ -835,7 +835,7 @@ class RIFEC::Handler {
 	return $self->_wrap_response('MarkLastPhotoInRollResponse', {});
     }
 
-    method _make_http_reply($status,$message,$body) {
+    method _make_http_reply(Num $status, Str $message, Str $body) {
 	# Enforce CRLF:
 	$body =~ s/([^\r])\n/$1\r\n/g;
 	my $raw = Encode::encode_utf8($body);
@@ -904,7 +904,7 @@ class RIFEC::Server {
     use HTTP::Daemon;
     use HTTP::Status;
 
-    method run() {
+    method run {
 	$SIG{CHLD} = 'IGNORE';
 
         my $d = HTTP::Daemon->new(LocalPort => $config->port(),
