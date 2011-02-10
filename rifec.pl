@@ -306,7 +306,7 @@ class RIFEC::Session {
 
 	while ($has_read < $bytes) {
 	    my $o;
-	    my $read_status = $fh->read($o, $bytes);
+	    my $read_status = $fh->read($o, $bytes - $has_read);
 
 	    if (!defined $read_status) {
 		die "Error while reading random data from '$random_file': $!";
