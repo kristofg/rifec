@@ -33,6 +33,7 @@ class RIFEC::Config {
     use Config::IniFiles;
     use Cwd qw();
     use Data::Dumper;
+    use Carp qw(confess);
 
     has 'file' => (is       => 'rw');
 
@@ -62,17 +63,17 @@ class RIFEC::Config {
 	# Absolute-ize, so that error messages output a full path:
 	$self->file( Cwd::abs_path($self->file) );
 
-	die sprintf("Config file '%s' does not exist", $self->file)
+	confess sprintf("Config file '%s' does not exist", $self->file)
 	    unless -e $self->file;
-	die sprintf("Config file '%s' is not readable", $self->file)
+	confess sprintf("Config file '%s' is not readable", $self->file)
 	    unless -r $self->file;
-	die sprintf("Config file '%s' is empty", $self->file)
+	confess sprintf("Config file '%s' is empty", $self->file)
 	    unless -s $self->file;
 
 	my $c = Config::IniFiles->new(-file   => $self->file,
 				      -nocase => 1,
 				      -default => 'main');
-	die "Unable to read config file: ", Dumper(@Config::IniFiles::errors)
+	confess "Unable to read config file: ", Dumper(@Config::IniFiles::errors)
 	    unless defined($c) && $c;
 
 	return $c;
@@ -80,13 +81,13 @@ class RIFEC::Config {
 
     method _normalize_mac(Str $in) {
 	my $ret = $in;
-	$ret =~ s/[-: ]//g;
+	$ret =~ s/[-: ]//gx;
 	return lc $ret;
     }
 
     method _build_cardlist() {
 	my $c = $self->_cfg()
-	    || die "Configuration not initialized yet!";
+	    || confess "Configuration not initialized yet!";
 	my %card;
 	$self->_known_cards( () );
 
@@ -94,14 +95,14 @@ class RIFEC::Config {
 	    if ($s eq 'main') {
 		next;
 	    }
-	    elsif ($s =~ /\Acard (.*?)\z/i) {
+	    elsif ($s =~ /\A card \s+ (.*?) \z/xi) {
 		my $cardname = $1;
 
 		my $mac = $self->_get($s, 'MacAddress');
 		$mac = $self->_normalize_mac($mac);
 
-		die sprintf("Card '$mac' defined multiple times: '%s', '%s'",
-			    $card{$mac}->{'name'}, $cardname)
+		confess sprintf("Card '$mac' defined multiple times: '%s', '%s'",
+                                $card{$mac}->{'name'}, $cardname)
 		    if exists $card{$mac};
 
 		$card{$mac} = {'uploadkey' => $self->_get($s, 'UploadKey'),
@@ -110,7 +111,7 @@ class RIFEC::Config {
 		$self->_known_cards( [ @{ $self->_known_cards }, $mac ] );
 	    }
 	    else {
-		die sprintf("I don't know what to do with section '%s'", $s);
+		confess sprintf("I don't know what to do with section '%s'", $s);
 	    }
 	}
 	return \%card;
@@ -121,8 +122,8 @@ class RIFEC::Config {
 
 	# It can be blank, but not undef - that means someone forgot
 	# to set it:
-	die sprintf("Can't find config value '%s' in section '%s'",
-		    $param, $section)
+	confess sprintf("Can't find config value '%s' in section '%s'",
+                        $param, $section)
 	    unless defined $v;
 
 	return $v;
@@ -155,7 +156,7 @@ class RIFEC::Config {
     method doiknow(Str $card) {
 	my $mac = $self->_normalize_mac($card);
 
-	die sprintf("Sorry, I don't know the card with MAC %s", uc $mac)
+	confess sprintf("Sorry, I don't know the card with MAC %s", uc $mac)
 	    unless grep { $mac eq $_ } @{ $self->_known_cards };
 
 	return 1;
@@ -191,6 +192,7 @@ class RIFEC::Log {
     use Data::Dumper;
     use HTTP::Date qw();
     use IO::File;
+    use Carp qw(confess);
 
     has '_fh' => (is      => 'rw',
 		  default => sub { \*STDOUT });
@@ -212,13 +214,13 @@ class RIFEC::Log {
 
     method DEMOLISH() {
 	$self->_fh->close()
-	    or die "Unable to close logfile while exiting: $!";
+	    or confess "Unable to close logfile while exiting: $!";
     }
 
     method open() {
 	if (my $lf = $config->logfile()) {
 	    my $fh = IO::File->new($lf, O_WRONLY|O_APPEND)
-		or die "Unable to open logfile '$lf' for writing: $!";
+		or confess "Unable to open logfile '$lf' for writing: $!";
 	    $self->_fh($fh);
 	}
     }
@@ -233,7 +235,7 @@ class RIFEC::Log {
     method _print_if(Str $loglevel, Str @str) {
 	# Sanity check.
 	foreach my $ll ($loglevel, $config->loglevel) {
-	    die sprintf("Invalid loglevel '%s'", $ll)
+	    confess sprintf("Invalid loglevel '%s'", $ll)
 		unless $self->_ll->{lc $ll};
 	}
 
@@ -249,10 +251,10 @@ class RIFEC::Log {
 		$out .= sprintf shift(@str), @str;
 	    }
 	    else {
-		die "If you log, please send content too.";
+		confess "If you log, please send content too.";
 	    }
 	    # \n-terminate if needed
-	    $out .= ($out =~ /\n\z/) ? "" : "\n";
+	    $out .= ($out =~ / \n \z/x) ? "" : "\n";
 
 	    print { $self->_fh } $out;
 	    $self->_fh->flush();
@@ -281,6 +283,7 @@ class RIFEC::Session {
     use Digest::MD5 qw(md5_hex);
     use IO::File;
     use Data::Dumper;
+    use Carp qw(confess);
 
     # new() params - things we must know right away:
     has 'card'                  => (isa => 'Str', is => 'rw', required => 1);
@@ -301,25 +304,25 @@ class RIFEC::Session {
 	my $output;
 	my $has_read = 0;
 
-	my $fh = new IO::File($random_file, "r")
-	    or die "Unable to open '$random_file' for reading random data: $!";
+	my $fh = IO::File->new($random_file, O_RDONLY)
+	    or confess "Unable to open '$random_file' for reading random data: $!";
 
 	while ($has_read < $bytes) {
 	    my $o;
 	    my $read_status = $fh->read($o, $bytes - $has_read);
 
 	    if (!defined $read_status) {
-		die "Error while reading random data from '$random_file': $!";
+		confess "Error while reading random data from '$random_file': $!";
 	    }
 	    elsif ($read_status == 0) {
-		die "Reached EOF while reading random data from '$random_file'";
+		confess "Reached EOF while reading random data from '$random_file'";
 	    }
 	    $output .= $o;
 	    $has_read += $read_status;
 	}
 
 	$fh->close()
-	    or die "Unable to close '$random_file': $!";
+	    or confess "Unable to close '$random_file': $!";
 	return $output;
     }
 
@@ -349,10 +352,10 @@ class RIFEC::Session {
 	my $known_txmodes = 2 | 32 | 512;
 
 	if ($args->{'transfermode'} & ~$known_txmodes) {
-	    die sprintf("Unsupported transfermode '%s' from card '%s' (%s)",
-			$args->{'transfermode'},
-			$config->cardname($args->{'card'}),
-			$args->{'card'});
+	    confess sprintf("Unsupported transfermode '%s' from card '%s' (%s)",
+                            $args->{'transfermode'},
+                            $config->cardname($args->{'card'}),
+                            $args->{'card'});
 	}
     }
 
@@ -375,6 +378,7 @@ class RIFEC::File {
     use Data::Dumper;
     use File::Spec;
     use Digest::MD5 qw();
+    use Carp qw(confess);
 
     has 'session'       => (isa => 'RIFEC::Session', is => 'ro', required => 1);
 
@@ -416,7 +420,7 @@ class RIFEC::File {
 	$log->debug("Calculating integrity digest...");
 
 	# Make sure it is 512-block aligned (it should be)
-	die "Content block not 512-byte aligned!"
+	confess "Content block not 512-byte aligned!"
 	    if length($block) % 512;
 
 	my $md5 = Digest::MD5->new();
@@ -438,11 +442,11 @@ class RIFEC::File {
     method store_content(Str $content) {
 	my $folder = $config->folder($self->session()->card());
 
-	die "Destionation directory not found"
+	confess "Destionation directory not found"
 	    unless -e $folder;
-	die "Destionation directory not a directory"
+	confess "Destionation directory not a directory"
 	    unless -d $folder;
-	die "Destionation directory not writeable"
+	confess "Destionation directory not writeable"
 	    unless -w $folder;
 
 	# Calculate our integritydigest while the file contents are in
@@ -458,7 +462,7 @@ class RIFEC::File {
 	my $tfn = $tfh->filename;
 
 	print $tfh $content;
-	$tfh->close() or die "Unable to close '$tfn': $!";
+	$tfh->close() or confess "Unable to close '$tfn': $!";
 	$self->_tarfile($tfn); # Remember where we put it
 	$log->debug("Saved file '%s' ('%s')", $tfn, $self->tarfilename());
     }
@@ -477,7 +481,7 @@ class RIFEC::File {
 		       $self->_tarfile,
 		       $stat_size,
 		       $self->size);
-	    return undef;
+	    return;
 	}
 
 	# Then check the integrity digest field:
@@ -490,7 +494,7 @@ class RIFEC::File {
 	    $log->warn(" Calculated: [%s]\n   Received: [%s]",
 		       uc $self->calculated_digest(),
 		       uc $self->integritydigest());
-	    return undef;
+	    return;
 	}
 	return 1;
     }
@@ -521,8 +525,8 @@ class RIFEC::File {
 	    }
 	}
 
-	die sprintf("Unable to write '%s': Destination files already there!",
-		    $dst)
+	confess sprintf("Unable to write '%s': Destination files already there!",
+                        $dst)
 	    unless $done;
 
 	return $dst;
@@ -532,12 +536,12 @@ class RIFEC::File {
 	my $tar = Archive::Tar->new($self->_tarfile());
 
 	my @files = $tar->list_files();
-	die sprintf("I don't know how to handle tarballs with >1 files! (%s)",
-		    join(", ", @files))
+	confess sprintf("I don't know how to handle tarballs with >1 files! (%s)",
+                        join(", ", @files))
 	    if scalar(@files) > 1;
 
 	my $fn = shift @files;
-	die sprintf("Illegal name of file inside tarball: '%s'", $fn)
+	confess sprintf("Illegal name of file inside tarball: '%s'", $fn)
 	    unless $fn =~ $RIFEC::File::filename_regexp;
 
 	my $tfh = File::Temp->new(
@@ -549,9 +553,9 @@ class RIFEC::File {
 	$log->debug("Writing image '%s' to tempfile '%s'...", $fn, $tfn);
 
 	print $tfh $tar->get_content($fn);
-	$tfh->flush() or die "Unable to flush '$tfn': $!";
-	$tfh->sync()  or die "Unable to sync '$tfn': $!";
-	$tfh->close() or die "Unable to close '$tfn': $!";
+	$tfh->flush() or confess "Unable to flush '$tfn': $!";
+	$tfh->sync()  or confess "Unable to sync '$tfn': $!";
+	$tfh->close() or confess "Unable to close '$tfn': $!";
 
 	# Return the filename of the file in the tarball plus the
 	# tempfile this file is currently stored in:
@@ -577,12 +581,12 @@ class RIFEC::File {
 
 	$log->debug("Removing tar file '%s'", $self->_tarfile());
 	unlink $self->_tarfile
-	    or die sprintf("Unable to unlink tarfile '%s': $!",
-			   $self->_tarfile);
+	    or confess sprintf("Unable to unlink tarfile '%s': $!",
+                               $self->_tarfile);
 
 	$log->debug("Removing temp file '%s'", $tempcontent);
 	unlink $tempcontent
-	    or die "Unable to unlink tempfile '$tempcontent': $!";
+	    or confess "Unable to unlink tempfile '$tempcontent': $!";
 
 	# Chmod it to use the default umask
 	chmod 0666 & ~umask(), $self->_file
@@ -595,12 +599,12 @@ class RIFEC::File {
 
 class RIFEC::Handler {
     use Data::Dumper;
-    use XML::Simple qw();
+    use XML::Simple qw(:strict);
     use Encode qw();
     use HTTP::Message;
     use HTTP::Status qw(:constants);
     use Params::Validate qw(validate);
-    use Carp qw(cluck);
+    use Carp qw(confess);
 
     has 'session' => (isa => 'RIFEC::Session', is => 'rw', required => 0);
 
@@ -678,9 +682,9 @@ class RIFEC::Handler {
 
         # MooseX::Declare has checked that $body is a HashRef already,
         # so we can go straight on the keys inside it:
-        cluck "No element '$bodyname' in body"
+        confess "No element '$bodyname' in body"
             unless exists $body->{$bodyname} && defined $body->{$bodyname};
-        cluck "Element '$bodyname' is not a hash ref"
+        confess "Element '$bodyname' is not a hash ref"
             unless ref($body->{$bodyname}) eq 'HASH';
 
         Params::Validate::validation_options('stack_skip' => 2);
@@ -729,15 +733,15 @@ class RIFEC::Handler {
 	# check before uploading photos.
 	if (lc $params->{'macaddress'} ne lc $s->card())
 	{
-	    die sprintf("MAC from card != session MAC (%s != %s)",
-			lc $params->{'macaddress'},
-			lc $s->card());
+	    confess sprintf("MAC from card != session MAC (%s != %s)",
+                            lc $params->{'macaddress'},
+                            lc $s->card());
 	}
 	if (lc $params->{'credential'} ne lc $s->card_credential())
 	{
-	    die sprintf("Card credential invalid (%s != %s)",
-			lc $params->{'credential'},
-			lc $s->card_credential());
+	    confess sprintf("Card credential invalid (%s != %s)",
+                            lc $params->{'credential'},
+                            lc $s->card_credential());
 	}
 
 	$s->authenticated(1);
@@ -753,9 +757,17 @@ class RIFEC::Handler {
     method _soapenvelope($part where { $_->isa('HTTP::Message') }) {
 	my $content = $part->content();
 
-	my $soapbody = XML::Simple::XMLin($content, ForceArray => 0);
+        my $soapbody;
+        my $eval_result = eval {
+            $soapbody = XML::Simple::XMLin($content,
+                                           ForceArray => 0,
+                                           KeyAttr    => []);
+        };
+        if (!defined $eval_result) {
+            confess "XML::Simple::XMLin died: $@";
+        }
 
-        die "Unable to find SOAP Body in Upload envelope"
+        confess "Unable to find SOAP Body in Upload envelope"
             unless (ref($soapbody) eq 'HASH' &&
                     exists $soapbody->{'SOAP-ENV:Body'});
 
@@ -776,7 +788,7 @@ class RIFEC::Handler {
 		   $config->cardname($self->session->card),
 		   $self->session->card);
 
-	die "Session un-authenticated, upload is a no-go"
+	confess "Session un-authenticated, upload is a no-go"
 	    unless $self->session()->authenticated();
 
 	my $file;
@@ -784,12 +796,12 @@ class RIFEC::Handler {
 	my @expected_parts = ('SOAPENVELOPE', 'FILENAME', 'INTEGRITYDIGEST');
 	foreach my $part ($request->parts())
 	{
-	    my ($partname) = $part->headers_as_string() =~ /name="(.*?)"/;
-	    die "Unable to extract name from part header" unless $partname;
+	    my ($partname) = $part->headers_as_string() =~ /name="(.*?)"/x;
+	    confess "Unable to extract name from part header" unless $partname;
 
 	    # We want those three parts in that particular order
 	    my $expect_partname = shift @expected_parts;
-	    die sprintf("Expected part '%s', got '%s'", $expect_partname, $partname)
+	    confess sprintf("Expected part '%s', got '%s'", $expect_partname, $partname)
 		unless $partname eq $expect_partname;
 
 	    if ($partname eq 'SOAPENVELOPE')
@@ -801,9 +813,9 @@ class RIFEC::Handler {
 	    elsif ($partname eq 'FILENAME')
 	    {
 		# Sanity checking:
-		my ($fn) = $part->headers_as_string() =~ /filename="(.*?)"/;
-		die "Unable to extract filename from part header" unless $fn;
-		die "File name differs from RIFEC::File state"
+		my ($fn) = $part->headers_as_string() =~ /filename="(.*?)"/x;
+		confess "Unable to extract filename from part header" unless $fn;
+		confess "File name differs from RIFEC::File state"
 		    unless $fn eq $file->tarfilename();
 		$file->store_content($part->content());
 	    }
@@ -837,7 +849,7 @@ class RIFEC::Handler {
 
     method _make_http_reply(Num $status, Str $message, Str $body) {
 	# Enforce CRLF:
-	$body =~ s/([^\r])\n/$1\r\n/g;
+	$body =~ s/ ([^\r]) \n /$1\r\n/gx;
 	my $raw = Encode::encode_utf8($body);
 
 	my $header = HTTP::Headers->new();
@@ -845,7 +857,7 @@ class RIFEC::Handler {
 	$header->content_type         ('text/xml');
 	$header->content_type_charset ('UTF-8');
 	$header->content_length       (length($raw));
-	$header->server               ('rifec.pl v0.5');
+	$header->server               ('rifec.pl v0.6');
 	$header->date                 (time);
 	$header->header               ('pragma' => 'no-cache');
 
@@ -858,20 +870,28 @@ class RIFEC::Handler {
 			 '"urn:GetPhotoStatus"'      => \&getphotostatus,
 			 '"urn:MarkLastPhotoInRoll"' => \&marklastphotoinroll);
 
-	eval {
+	my $eval_result = eval {
 	    my $answer;
 
 	    if ($request->method eq 'POST' &&
 		$request->uri->path eq "/api/soap/eyefilm/v1")
-	    {
+            {
 		my $action = $request->header('SOAPAction');
-		my $body = XML::Simple::XMLin( $request->content(), ForceArray => 0 );
+                my $body;
+                my $xml_eval_result = eval {
+                    $body = XML::Simple::XMLin($request->content(),
+                                               ForceArray => 0,
+                                               KeyAttr    => []);
+                };
+                if (!defined $xml_eval_result) {
+                    confess "XML::Simple::XMLin died: $@";
+                }
 
 		if (ref($handlerof{$action}) eq 'CODE') {
 		    $answer = $handlerof{$action}->($self, $body->{'SOAP-ENV:Body'});
 		}
 		else {
-		    die "Found no handler for [$action]";
+		    confess "Found no handler for [$action]";
 		}
 	    }
 	    elsif ($request->method eq 'POST' &&
@@ -880,17 +900,18 @@ class RIFEC::Handler {
 		$answer = $self->upload($request);
 	    }
 	    else {
-		die sprintf("Unknown method/path combo: '%s' '%s'",
-			    $request->method,
-			    $request->uri->path);
+		confess sprintf("Unknown method/path combo: '%s' '%s'",
+                                $request->method,
+                                $request->uri->path);
 	    }
 
 	    $reply = $self->_make_http_reply(HTTP_OK, "OK",
 					     XML::Simple::XMLout($answer,
 								 KeepRoot => 1,
-								 XMLDecl  => 1));
+								 XMLDecl  => 1,
+                                                                 KeyAttr  => []));
 	};
-	if ($@) {
+        if (!defined $eval_result) {
 	    $log->warn("Died in request handling: " . $@);
 	    $reply = $self->_make_http_reply(HTTP_INTERNAL_SERVER_ERROR,
 					     "Internal server error",
@@ -903,13 +924,14 @@ class RIFEC::Handler {
 class RIFEC::Server {
     use HTTP::Daemon;
     use HTTP::Status;
+    use Carp qw(confess);
 
     method run() {
-	$SIG{CHLD} = 'IGNORE';
+        local $SIG{CHLD} = 'IGNORE';
 
         my $d = HTTP::Daemon->new(LocalPort => $config->port(),
 				  ReuseAddr => 1)
-	    || die "Unable to instantiate HTTP Daemon: $!";
+	    || confess "Unable to instantiate HTTP Daemon: $!";
 	$log->info("Listening on %s", $d->url());
 
 	while (my $conn = $d->accept())
