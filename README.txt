@@ -4,9 +4,9 @@ RIFEC: Receive Images From Eye-Fi Cards
 rifec.pl is a standalone program that receives images from Eye-Fi
 cards and stores them to disk.
 
-It works great with my Pro X2 card running firmware 4.2172 (4.2139
-worked fine as well).  I have not tested other versions, but feedback
-from people who have is welcome.
+It works great with my Pro X2 card running firmware 4.5022 (4.2172 and
+4.2139 worked fine as well).  I have not tested other versions, but
+feedback from people who have is welcome.
 
 It runs mainly on Linux, but making it run on other Unix variants
 should be trivial.  It is written in Perl, uses some CPAN modules, and
@@ -84,29 +84,3 @@ Ideas
   complete: Would allow better progress notification ("upload in
   progress, 10% received") and probably make (network) debugging
   easier, but is a bit more complex on the code side.
-
-
-Things I've decided not to worry about for now
-==============================================
-
-* Some kind of persistent upload counter not just between handlers in
-  the same session, but between sessions?  Does it make any difference
-  at all to the card?  
-  => It seems not, a lot of the other implementations have hard coded
-  it to 1.
-
-* Should I just echo back the transfermode I get from the card
-  regardless of what it is, or are there some transfermodes I should
-  reject?
-  => The transfermode field seems to be a bitmask; I'll start by only
-  accepting the bits I (think I) know what means, and add more if/when
-  necessary.
-
-* What does the 'offset' field in the GetPhotoStatus reply mean?
-  => Reading the Card log, my guess is that this field is used when
-  the server has received a partial upload, ie. half a file.  It can
-  then use this field to say how much of the file is already received.
-  So leaving this as 0 should be pretty safe - we don't support
-  partial uploads at all anyway (only complete requests come through
-  the HTTP library; this can be worked around, but I'm not sure if
-  it's worth it.)

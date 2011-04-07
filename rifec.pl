@@ -82,6 +82,10 @@ class RIFEC::Config {
     method _normalize_mac(Str $in) {
 	my $ret = $in;
 	$ret =~ s/[-: ]//gx;
+
+        confess "'$in' doesn't look like a MAC address"
+            unless $ret =~ m|\A [a-z0-9]{12} \z|xi;
+
 	return lc $ret;
     }
 
@@ -105,11 +109,19 @@ class RIFEC::Config {
                                 $card{$mac}->{'name'}, $cardname)
 		    if exists $card{$mac};
 
-		$card{$mac} = {'uploadkey' => $self->_get($s, 'UploadKey'),
-			       'folder'    => $self->_get($s, 'Folder'),
-			       'name'      => $cardname};
+		$card{$mac} = { 'name'      => $cardname,
+                                'uploadkey' => $self->_get($s, 'UploadKey'),
+                                'folder'    => $self->_get($s, 'Folder'),
+                                'timestamp' => $self->_get($s, 'Timestamp', 1) };
 		$self->_known_cards( [ @{ $self->_known_cards }, $mac ] );
-	    }
+
+                # Verify that the critical settings are set:
+                my $die_str = "Missing or blank '%s' for card '%s'";
+                foreach my $setting ('uploadkey', 'folder') {
+                    confess sprintf($die_str, $setting, $cardname)
+                        unless $card{$mac}->{$setting};
+                }
+            }
 	    else {
 		confess sprintf("I don't know what to do with section '%s'", $s);
 	    }
@@ -117,16 +129,21 @@ class RIFEC::Config {
 	return \%card;
     }
 
-    method _get(Str $section, Str $param) {
+    method _get(Str $section, Str $param, Bool $optional? = 0) {
 	my $v = $self->_cfg()->val($section, $param);
 
 	# It can be blank, but not undef - that means someone forgot
 	# to set it:
 	confess sprintf("Can't find config value '%s' in section '%s'",
                         $param, $section)
-	    unless defined $v;
+	    unless $optional || defined $v;
 
 	return $v;
+    }
+
+    method _cardsetting(Str $card, Str $name) {
+	my $mac = $self->_normalize_mac($card);
+	return $self->_card->{$mac}->{$name};
     }
 
     method say_hello() {
@@ -162,19 +179,21 @@ class RIFEC::Config {
 	return 1;
     }
 
+    # I wonder if Moose can autogenerate these for me...
     method uploadkey(Str $card) {
-	my $mac = $self->_normalize_mac($card);
-	return $self->_card->{$mac}->{'uploadkey'};
+        return $self->_cardsetting($card, 'uploadkey');
     }
 
     method folder(Str $card) {
-	my $mac = $self->_normalize_mac($card);
-	return $self->_card->{$mac}->{'folder'};
+        return $self->_cardsetting($card, 'folder');
     }
 
     method cardname(Str $card) {
-	my $mac = $self->_normalize_mac($card);
-	return $self->_card->{$mac}->{'name'};
+        return $self->_cardsetting($card, 'name');
+    }
+
+    method timestamp(Str $card) {
+        return $self->_cardsetting($card, 'timestamp');
     }
 
     # I have no idea how important this ID really is
@@ -201,11 +220,11 @@ class RIFEC::Log {
     has '_ll' => (isa => 'HashRef[Str]',
 		  is  => 'ro',
 		  default => sub { {
-		      'off'   => 100,
-		      'warn'  => 4,
-		      'info'  => 3,
-		      'debug' => 2,
-		      'trace' => 1,
+		      'off'     => 100,
+		      'warning' => 4,
+		      'info'    => 3,
+		      'debug'   => 2,
+		      'trace'   => 1,
 		      }});
 
     method BUILD(HashRef $args) {
@@ -273,8 +292,8 @@ class RIFEC::Log {
 	$self->_print_if('info', @str);
     }
 
-    method warn(Str @str) {
-	$self->_print_if('warn', @str);
+    method warning(Str @str) {
+	$self->_print_if('warning', @str);
     }
 }
 
@@ -373,11 +392,12 @@ class RIFEC::Session {
 }
 
 class RIFEC::File {
-    use File::Temp qw();
     use Archive::Tar;
-    use Data::Dumper;
     use File::Spec;
+    use File::Temp qw();
     use Digest::MD5 qw();
+    use POSIX qw();
+    use Data::Dumper;
     use Carp qw(confess);
 
     has 'session'       => (isa => 'RIFEC::Session', is => 'ro', required => 1);
@@ -477,10 +497,10 @@ class RIFEC::File {
 			$self->size);
 	}
 	else {
-	    $log->warn("File '%s' is %d bytes long, should have been %d",
-		       $self->_tarfile,
-		       $stat_size,
-		       $self->size);
+	    $log->warning("File '%s' is %d bytes long, should have been %d",
+                          $self->_tarfile,
+                          $stat_size,
+                          $self->size);
 	    return;
 	}
 
@@ -490,10 +510,10 @@ class RIFEC::File {
 	    $log->debug("Integritydigest OK: [%s]", uc $self->integritydigest());
 	}
 	else {
-	    $log->warn("Integritydigests does not match!");
-	    $log->warn(" Calculated: [%s]\n   Received: [%s]",
-		       uc $self->calculated_digest(),
-		       uc $self->integritydigest());
+	    $log->warning("Integritydigests does not match!");
+	    $log->warning(" Calculated: [%s]\n   Received: [%s]",
+                          uc $self->calculated_digest(),
+                          uc $self->integritydigest());
 	    return;
 	}
 	return 1;
@@ -521,7 +541,7 @@ class RIFEC::File {
 	    else {
 		my $prev_dst = $dst;
 		$dst = sprintf("%s.%d", $destination_name, ++$tries);
-		$log->warn("'%s' already exists, trying '%s'", $prev_dst, $dst);
+		$log->warning("'%s' already exists, trying '%s'", $prev_dst, $dst);
 	    }
 	}
 
@@ -532,17 +552,32 @@ class RIFEC::File {
 	return $dst;
     }
 
+    method _timestamp_file($tar where { $_->isa('Archive::Tar::File') },
+                           Str $filename) {
+        my $t = POSIX::strftime("%s", localtime($tar->mtime));
+
+        $log->trace("Setting mtime on %s (%s) to %s (%s)",
+                    $filename,
+                    $tar->name,
+                    $tar->mtime,
+                    POSIX::strftime("%Y-%m-%d %H:%M:%S",
+                                    localtime($tar->mtime)));
+        utime($t, $t, $filename)
+            or $log->warning("Unable to set time on file %s (%s)",
+                             $filename, $tar->name);
+    }
+
     method _extract_tarfile() {
 	my $tar = Archive::Tar->new($self->_tarfile());
 
-	my @files = $tar->list_files();
+	my @files = $tar->get_files();
 	confess sprintf("I don't know how to handle tarballs with >1 files! (%s)",
-                        join(", ", @files))
+                        join(", ", map { $_->name } @files))
 	    if scalar(@files) > 1;
 
-	my $fn = shift @files;
-	confess sprintf("Illegal name of file inside tarball: '%s'", $fn)
-	    unless $fn =~ $RIFEC::File::filename_regexp;
+	my $f = shift @files;
+	confess sprintf("Illegal name of file inside tarball: '%s'", $f->name)
+	    unless $f->name =~ $RIFEC::File::filename_regexp;
 
 	my $tfh = File::Temp->new(
 	    TEMPLATE => sprintf(".eyefistore-%d-XXXXXXXX", $$),
@@ -550,16 +585,21 @@ class RIFEC::File {
 	    UNLINK   => 0);
 	my $tfn = $tfh->filename;
 
-	$log->debug("Writing image '%s' to tempfile '%s'...", $fn, $tfn);
+	$log->debug("Writing image '%s' to tempfile '%s'...", $f->name, $tfn);
 
-	print $tfh $tar->get_content($fn);
+	print $tfh $f->get_content();
 	$tfh->flush() or confess "Unable to flush '$tfn': $!";
 	$tfh->sync()  or confess "Unable to sync '$tfn': $!";
 	$tfh->close() or confess "Unable to close '$tfn': $!";
 
+        # Set the mtime of the file if configured to:
+        if ($config->timestamp( $self->session->card )) {
+            $self->_timestamp_file($f, $tfn);
+        }
+
 	# Return the filename of the file in the tarball plus the
 	# tempfile this file is currently stored in:
-	return ($fn, $tfn);
+	return ($f->name, $tfn);
     }
 
     method extract() {
@@ -573,8 +613,8 @@ class RIFEC::File {
 
 	my $outfile = $self->_link_file($tempcontent, $full_filename);
 
-	$log->warn("Destination file '%s' saved as '%s' to avoid collision",
-		   $full_filename, $outfile)
+	$log->warning("Destination file '%s' saved as '%s' to avoid collision",
+                      $full_filename, $outfile)
 	    unless $outfile eq $full_filename;
 
 	$self->_file($outfile); # Remember where we put it
@@ -590,7 +630,7 @@ class RIFEC::File {
 
 	# Chmod it to use the default umask
 	chmod 0666 & ~umask(), $self->_file
-	    or $log->warn("Unable to chmod '%s'", $self->file);
+	    or $log->warning("Unable to chmod '%s'", $self->file);
 
 	$log->info("File '%s' saved", $self->_file());
 	return 'ok';
@@ -825,6 +865,10 @@ class RIFEC::Handler {
 	    }
 	}
 
+        # Should we crash if $file->check() fails?  I am thinking not:
+        # We log a warning and tell the card whether the operation
+        # succeeded or not anyway, so I can't see any extra value
+        # added by confess().
 	my $ok = $file->check() && $file->extract();
 
 	return $self->_wrap_response(
@@ -912,7 +956,7 @@ class RIFEC::Handler {
                                                                  KeyAttr  => []));
 	};
         if (!defined $eval_result) {
-	    $log->warn("Died in request handling: " . $@);
+	    $log->warning("Died in request handling: " . $@);
 	    $reply = $self->_make_http_reply(HTTP_INTERNAL_SERVER_ERROR,
 					     "Internal server error",
 					     "<title>My handler died :(</title>");
@@ -948,6 +992,7 @@ class RIFEC::Server {
 		    $log->debug("%s:%d -> %s %s",
 				$conn->peerhost(), $conn->peerport(),
 				$req->method, $req->uri->path);
+                    #$log->trace("Request headers: " . $req->headers_as_string());
 		    # All sanity checking is done in the handler
 		    my $http_reply = $handler->dispatch($req);
 		    $conn->send_response($http_reply);
@@ -991,9 +1036,9 @@ $log->info($config->say_hello());
 # check parameters etc. while still in the foreground
 if ($daemonize) {
     if ($log->_fh->fileno == fileno(STDOUT)) {
-	$log->warn("Daemon mode enabled while logging to STDOUT: " .
-		   "Logs and error messages will disappear. " .
-		   "Consider logging to a file instead.");
+	$log->warning("Daemon mode enabled while logging to STDOUT: " .
+                      "Logs and error messages will disappear. " .
+                      "Consider logging to a file instead.");
     }
     Proc::Daemon::Init();
     $log->open(); # since Proc::Daemon::Init closes all open fh's
