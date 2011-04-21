@@ -143,6 +143,7 @@ class RIFEC::Config {
 
     method _cardsetting(Str $card, Str $name) {
 	my $mac = $self->_normalize_mac($card);
+        $self->doiknow($mac);
 	return $self->_card->{$mac}->{$name};
     }
 
@@ -150,6 +151,15 @@ class RIFEC::Config {
 	return sprintf("Config file '%s', %d card(s) configured",
 		       Cwd::abs_path($self->file),
 		       scalar keys %{ $self->_card });
+    }
+
+    method doiknow(Str $card) {
+	my $mac = $self->_normalize_mac($card);
+
+	confess sprintf("Sorry, I don't know the card with MAC %s", uc $mac)
+	    unless grep { $mac eq $_ } @{ $self->_known_cards };
+
+	return 1;
     }
 
     # Actual config accessors:
@@ -170,16 +180,6 @@ class RIFEC::Config {
     }
 
     # Per-card settings:
-    method doiknow(Str $card) {
-	my $mac = $self->_normalize_mac($card);
-
-	confess sprintf("Sorry, I don't know the card with MAC %s", uc $mac)
-	    unless grep { $mac eq $_ } @{ $self->_known_cards };
-
-	return 1;
-    }
-
-    # I wonder if Moose can autogenerate these for me...
     method uploadkey(Str $card) {
         return $self->_cardsetting($card, 'uploadkey');
     }
@@ -476,7 +476,7 @@ class RIFEC::File {
 	$self->calculated_digest( $self->_calculate_integritydigest($content) );
 
 	my $tfh = File::Temp->new(
-	    TEMPLATE => sprintf(".eyefitransit-%d-XXXXXXXX", $$),
+	    TEMPLATE => sprintf(".rifec-transit-%d-XXXXXXXX", $$),
 	    DIR      => $folder,
 	    UNLINK   => 0);
 	my $tfn = $tfh->filename;
@@ -580,7 +580,7 @@ class RIFEC::File {
 	    unless $f->name =~ $RIFEC::File::filename_regexp;
 
 	my $tfh = File::Temp->new(
-	    TEMPLATE => sprintf(".eyefistore-%d-XXXXXXXX", $$),
+	    TEMPLATE => sprintf(".rifec-store-%d-XXXXXXXX", $$),
 	    DIR      => $config->folder( $self->session()->card() ),
 	    UNLINK   => 0);
 	my $tfn = $tfh->filename;
@@ -620,13 +620,13 @@ class RIFEC::File {
 	$self->_file($outfile); # Remember where we put it
 
 	$log->debug("Removing tar file '%s'", $self->_tarfile());
-	unlink $self->_tarfile
-	    or confess sprintf("Unable to unlink tarfile '%s': $!",
+        unlink $self->_tarfile
+            or confess sprintf("Unable to unlink tarfile '%s': $!",
                                $self->_tarfile);
 
 	$log->debug("Removing temp file '%s'", $tempcontent);
-	unlink $tempcontent
-	    or confess "Unable to unlink tempfile '$tempcontent': $!";
+        unlink $tempcontent
+            or confess "Unable to unlink tempfile '$tempcontent': $!";
 
 	# Chmod it to use the default umask
 	chmod 0666 & ~umask(), $self->_file
