@@ -111,8 +111,7 @@ class RIFEC::Config {
 
 		$card{$mac} = { 'name'      => $cardname,
                                 'uploadkey' => $self->_get($s, 'UploadKey'),
-                                'folder'    => $self->_get($s, 'Folder'),
-                                'timestamp' => $self->_get($s, 'Timestamp', 1) };
+                                'folder'    => $self->_get($s, 'Folder') };
 		$self->_known_cards( [ @{ $self->_known_cards }, $mac ] );
 
                 # Verify that the critical settings are set:
@@ -192,10 +191,6 @@ class RIFEC::Config {
         return $self->_cardsetting($card, 'name');
     }
 
-    method timestamp(Str $card) {
-        return $self->_cardsetting($card, 'timestamp');
-    }
-
     # I have no idea how important this ID really is
     method counter() {
 	return $self->_counter();
@@ -245,7 +240,7 @@ class RIFEC::Log {
     }
 
     method _get_preamble(Str $ll) {
-	return sprintf("%s %7u %5s ",
+	return sprintf("%s %7u %7s ",
 		       HTTP::Date::time2isoz(),
 		       $$,
 		       uc $ll);
@@ -552,21 +547,6 @@ class RIFEC::File {
 	return $dst;
     }
 
-    method _timestamp_file($tar where { $_->isa('Archive::Tar::File') },
-                           Str $filename) {
-        my $t = POSIX::strftime("%s", localtime($tar->mtime));
-
-        $log->trace("Setting mtime on %s (%s) to %s (%s)",
-                    $filename,
-                    $tar->name,
-                    $tar->mtime,
-                    POSIX::strftime("%Y-%m-%d %H:%M:%S",
-                                    localtime($tar->mtime)));
-        utime($t, $t, $filename)
-            or $log->warning("Unable to set time on file %s (%s)",
-                             $filename, $tar->name);
-    }
-
     method _extract_tarfile() {
 	my $tar = Archive::Tar->new($self->_tarfile());
 
@@ -591,11 +571,6 @@ class RIFEC::File {
 	$tfh->flush() or confess "Unable to flush '$tfn': $!";
 	$tfh->sync()  or confess "Unable to sync '$tfn': $!";
 	$tfh->close() or confess "Unable to close '$tfn': $!";
-
-        # Set the mtime of the file if configured to:
-        if ($config->timestamp( $self->session->card )) {
-            $self->_timestamp_file($f, $tfn);
-        }
 
 	# Return the filename of the file in the tarball plus the
 	# tempfile this file is currently stored in:
