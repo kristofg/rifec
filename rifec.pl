@@ -39,7 +39,7 @@ class RIFEC::Config {
 
     has '_cfg' => (isa      => 'Config::IniFiles',
 		   is       => 'ro',
-		   lazy     => 0,
+		   lazy     => 1,
 		   builder  => '_read_inifile');
 
     has '_card' => (isa     => 'HashRef',
@@ -70,9 +70,10 @@ class RIFEC::Config {
 	confess sprintf("Config file '%s' is empty", $self->file)
 	    unless -s $self->file;
 
-	my $c = Config::IniFiles->new(-file   => $self->file,
-				      -nocase => 1,
-				      -default => 'main');
+	my $c = Config::IniFiles->new(-file       => $self->file,
+				      -nocase     => 1,
+                                      -allowempty => 0,
+				      -default    => 'main');
 	confess "Unable to read config file: ", Dumper(@Config::IniFiles::errors)
 	    unless defined($c) && $c;
 
@@ -112,7 +113,7 @@ class RIFEC::Config {
 		$card{$mac} = { 'name'      => $cardname,
                                 'uploadkey' => $self->_get($s, 'UploadKey'),
                                 'folder'    => $self->_get($s, 'Folder') };
-		$self->_known_cards( [ @{ $self->_known_cards }, $mac ] );
+		push(@{ $self->_known_cards }, $mac);
 
                 # Verify that the critical settings are set:
                 my $die_str = "Missing or blank '%s' for card '%s'";
@@ -131,8 +132,8 @@ class RIFEC::Config {
     method _get(Str $section, Str $param, Bool $optional? = 0) {
 	my $v = $self->_cfg()->val($section, $param);
 
-	# It can be blank, but not undef - that means someone forgot
-	# to set it:
+        # if not optional, it can still be blank, but it must be
+        # present, ie. defined:
 	confess sprintf("Can't find config value '%s' in section '%s'",
                         $param, $section)
 	    unless $optional || defined $v;
@@ -140,10 +141,10 @@ class RIFEC::Config {
 	return $v;
     }
 
-    method _cardsetting(Str $card, Str $name) {
+    method _cardsetting(Str $card, Str $setting) {
 	my $mac = $self->_normalize_mac($card);
         $self->doiknow($mac);
-	return $self->_card->{$mac}->{$name};
+	return $self->_card->{$mac}->{$setting};
     }
 
     method say_hello() {
@@ -155,7 +156,7 @@ class RIFEC::Config {
     method doiknow(Str $card) {
 	my $mac = $self->_normalize_mac($card);
 
-	confess sprintf("Sorry, I don't know the card with MAC %s", uc $mac)
+	confess sprintf("Sorry, I don't know the card with MAC '%s'", lc $mac)
 	    unless grep { $mac eq $_ } @{ $self->_known_cards };
 
 	return 1;
@@ -457,11 +458,11 @@ class RIFEC::File {
     method store_content(Str $content) {
 	my $folder = $config->folder($self->session()->card());
 
-	confess "Destionation directory not found"
+	confess sprintf("Destination directory '%s' not found", $folder)
 	    unless -e $folder;
-	confess "Destionation directory not a directory"
+	confess sprintf("Destination directory '%s' not a directory", $folder)
 	    unless -d $folder;
-	confess "Destionation directory not writeable"
+	confess sprintf("Destination directory '%s' not writeable", $folder)
 	    unless -w $folder;
 
 	# Calculate our integritydigest while the file contents are in
@@ -710,7 +711,7 @@ class RIFEC::Handler {
 	my $params = $self->_extract_params($soapbody, "ns1:StartSession");
 
 	$log->info("StartSession from '%s' (%s)",
-		   $config->cardname($params->{'macaddress'}) || "(unknown)",
+		   $config->cardname($params->{'macaddress'}),
 		   $params->{'macaddress'});
 	$log->trace("StartSession: " . Dumper($params));
 
