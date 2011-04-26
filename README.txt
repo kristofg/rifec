@@ -29,6 +29,9 @@ others are:
 
 * https://github.com/tachang/EyeFiServer (Python)
 
+* https://launchpad.net/eyefi (Python; seems to be the most actively
+  maintained Python variant)
+
 * https://github.com/kenkeiter/ryfi (Ruby)
 
 * https://github.com/hacker/iii (C++)
