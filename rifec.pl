@@ -34,6 +34,7 @@ class RIFEC::Config {
     use Cwd qw();
     use Data::Dumper;
     use Carp qw(confess);
+    use POSIX qw();
 
     has 'file' => (is       => 'rw');
 
@@ -90,6 +91,24 @@ class RIFEC::Config {
 	return lc $ret;
     }
 
+    method _verify_card_settings(HashRef $settings) {
+        # Verify that the settings we must have to save pictures are
+        # set:
+        foreach my $key ('uploadkey', 'folder') {
+            confess sprintf("Missing or blank '%s' for card '%s'",
+                            $key, $settings->{'name'})
+                unless $settings->{$key};
+        }
+
+        # Verify that the subfolder settings - if set - make sense and
+        # can be used. (It's a no-op if SubFolder is blank, but that's
+        # no reason to put garbage into it)
+        my $ts = lc $settings->{'subfoldertimesource'};
+        if ($ts ne "exif" && $ts ne "local") {
+            confess "Unrecognized SubFolderTimeSource '$ts'";
+        }
+    }
+
     method _build_cardlist() {
 	my $c = $self->_cfg()
 	    || confess "Configuration not initialized yet!";
@@ -97,30 +116,28 @@ class RIFEC::Config {
 	$self->_known_cards( () );
 
 	foreach my $s ($c->Sections()) {
-	    if ($s eq 'main') {
-		next;
-	    }
-	    elsif ($s =~ /\A card \s+ (.*?) \z/xi) {
-		my $cardname = $1;
+	    next if $s eq 'main';
 
-		my $mac = $self->_get($s, 'MacAddress');
-		$mac = $self->_normalize_mac($mac);
+	    if ($s =~ /\A card \s+ (.*?) \z/xi) {
+		my $cardname = $1;
+		my $mac = $self->_normalize_mac( $self->_get($s, 'MacAddress') );
 
 		confess sprintf("Card '$mac' defined multiple times: '%s', '%s'",
                                 $card{$mac}->{'name'}, $cardname)
 		    if exists $card{$mac};
 
-		$card{$mac} = { 'name'      => $cardname,
-                                'uploadkey' => $self->_get($s, 'UploadKey'),
-                                'folder'    => $self->_get($s, 'Folder') };
-		push(@{ $self->_known_cards }, $mac);
+		$card{$mac} = {
+                    'name'                => $cardname,
+                    'uploadkey'           => $self->_get($s, 'UploadKey'),
+                    'folder'              => $self->_get($s, 'Folder'),
+                    'subfolder'           => $self->_get($s, 'SubFolder', 1),
+                    'subfoldertimesource' => $self->_get($s, 'SubFolderTimeSource', 1),
+                };
+                # Default values for blanks:
+                $card{$mac}->{'subfoldertimesource'} ||= "exif";
+                $self->_verify_card_settings($card{$mac});
 
-                # Verify that the critical settings are set:
-                my $die_str = "Missing or blank '%s' for card '%s'";
-                foreach my $setting ('uploadkey', 'folder') {
-                    confess sprintf($die_str, $setting, $cardname)
-                        unless $card{$mac}->{$setting};
-                }
+		push(@{ $self->_known_cards }, $mac);
             }
 	    else {
 		confess sprintf("I don't know what to do with section '%s'", $s);
@@ -148,9 +165,17 @@ class RIFEC::Config {
     }
 
     method say_hello() {
-	return sprintf("Config file '%s', %d card(s) configured",
-		       Cwd::abs_path($self->file),
-		       scalar keys %{ $self->_card });
+	$log->info("Config file '%s', %d card(s) configured:",
+                   Cwd::abs_path($self->file),
+                   scalar keys %{ $self->_card });
+
+        foreach my $card (keys %{ $self->_card }) {
+            $log->info("    Card '%s' (%s), writing to '%s' + '%s'",
+                       $self->cardname($card),
+                       $card,
+                       $self->folder($card),
+                       $self->subfolder($card) || '');
+        }
     }
 
     method doiknow(Str $card) {
@@ -186,6 +211,14 @@ class RIFEC::Config {
 
     method folder(Str $card) {
         return $self->_cardsetting($card, 'folder');
+    }
+
+    method subfolder(Str $card) {
+        return $self->_cardsetting($card, 'subfolder');
+    }
+
+    method subfoldertimesource(Str $card) {
+        return $self->_cardsetting($card, 'subfoldertimesource');
     }
 
     method cardname(Str $card) {
@@ -456,13 +489,13 @@ class RIFEC::File {
     }
 
     method store_content(Str $content) {
-	my $folder = $config->folder($self->session()->card());
+	my $folder = $config->folder($self->session->card);
 
-	confess sprintf("Destination directory '%s' not found", $folder)
+	confess sprintf("Top-level destination directory '%s' not found", $folder)
 	    unless -e $folder;
-	confess sprintf("Destination directory '%s' not a directory", $folder)
+	confess sprintf("Top-level destination directory '%s' not a directory", $folder)
 	    unless -d $folder;
-	confess sprintf("Destination directory '%s' not writeable", $folder)
+	confess sprintf("Top-level destination directory '%s' not writeable", $folder)
 	    unless -w $folder;
 
 	# Calculate our integritydigest while the file contents are in
@@ -515,6 +548,50 @@ class RIFEC::File {
 	return 1;
     }
 
+    method _subfolder(Str $tmpimage) {
+        my $card = $self->session->card;
+
+        my $topfolder   = $config->folder($card);
+        my $subfolder;
+        my $subtemplate = $config->subfolder($card);
+
+        if (!$subtemplate || $subtemplate =~ /\A \s* \z/mxi) {
+            $log->debug("Empty/blank subfolder for card '%s', save to top folder '%s'",
+                        $config->cardname($card),
+                        $topfolder);
+            return $topfolder;
+        }
+
+        if ($config->subfoldertimesource($card) eq 'exif') {
+            confess "Sorry, EXIF time source is not implemented yet";
+            #my $dt = Image::ExifTool::ImageInfo($tmpimage, 'DateTimeOriginal');
+            # ...
+        }
+        # Default/fallback: Use computer clock at time of transfer:
+        else {
+            $subfolder = POSIX::strftime($subtemplate, localtime());
+        }
+
+        my $destination = File::Spec->catfile($topfolder, $subfolder);
+        $log->debug("Destination subdirectory: '%s' -> '%s', full path: '%s'",
+                    $subtemplate,
+                    $subfolder,
+                    $destination);
+
+        # Next, create it:
+        if (! -e $destination) {
+            mkdir $destination
+                or confess "Unable to mkdir '$destination': $!";
+        }
+        # Sanity check:
+	confess sprintf("Destination directory '%s' not a directory", $destination)
+	    unless -d $destination;
+	confess sprintf("Destination directory '%s' not writeable", $destination)
+	    unless -w $destination;
+
+        return $destination;
+    }
+
     # We never want to overwrite existing files, but we don't want the
     # card to be stuck with files because we're not able to write them
     # to disk either.  So we receive it, but add .1 (or .2, or .n+1)
@@ -560,13 +637,15 @@ class RIFEC::File {
 	confess sprintf("Illegal name of file inside tarball: '%s'", $f->name)
 	    unless $f->name =~ $RIFEC::File::filename_regexp;
 
+        # The temp store file goes in the top-level dir, not the
+        # per-date-dir:
 	my $tfh = File::Temp->new(
 	    TEMPLATE => sprintf(".rifec-store-%d-XXXXXXXX", $$),
 	    DIR      => $config->folder( $self->session()->card() ),
 	    UNLINK   => 0);
 	my $tfn = $tfh->filename;
 
-	$log->debug("Writing image '%s' to tempfile '%s'...", $f->name, $tfn);
+	$log->debug("Writing image '%s' to tempfile '%s'", $f->name, $tfn);
 
 	print $tfh $f->get_content();
 	$tfh->flush() or confess "Unable to flush '$tfn': $!";
@@ -582,10 +661,11 @@ class RIFEC::File {
 	# Extract the tar file and save the contents to a temp file:
 	my ($filename, $tempcontent) = $self->_extract_tarfile();
 
+        # Create the sub folder if necessary:
+        my $dest_folder = $self->_subfolder($tempcontent);
+
 	# Do the hard linking from the final file name to the temp
-	my $full_filename =
-	    File::Spec->catfile($config->folder( $self->session->card ),
-				$filename);
+	my $full_filename = File::Spec->catfile($dest_folder, $filename);
 
 	my $outfile = $self->_link_file($tempcontent, $full_filename);
 
@@ -877,7 +957,7 @@ class RIFEC::Handler {
 	$header->content_type         ('text/xml');
 	$header->content_type_charset ('UTF-8');
 	$header->content_length       (length($raw));
-	$header->server               ('rifec.pl v0.6');
+	$header->server               ('rifec.pl v0.7');
 	$header->date                 (time);
 	$header->header               ('pragma' => 'no-cache');
 
@@ -1007,7 +1087,7 @@ $config    = RIFEC::Config->new('file' => $cf_file);
 $log       = RIFEC::Log->new();
 my $server = RIFEC::Server->new();
 
-$log->info($config->say_hello());
+$config->say_hello();
 # Daemonize after all the setup, since we want to be able to sanity
 # check parameters etc. while still in the foreground
 if ($daemonize) {
