@@ -397,7 +397,7 @@ class RIFEC::Session {
 	# I'll go with that theory for now: Either way this approach
 	# means all the modes I have seen will work, and the ones I
 	# haven't won't.
-	my $known_txmodes = 2 | 32 | 512;
+	my $known_txmodes = 1<<1 | 1<<5 | 1<<9;
 
 	if ($args->{'transfermode'} & ~$known_txmodes) {
 	    confess sprintf("Unsupported transfermode '%s' from card '%s' (%s)",
