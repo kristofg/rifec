@@ -204,6 +204,12 @@ class RIFEC::Config {
 	return $self->_get('main', 'SocketTimeout');
     }
 
+    method tarcommand() {
+	my $tc_val = $self->_get('main', 'TarCommand', 1);
+        $tc_val ||= "/bin/tar";
+        return $tc_val;
+    }
+
     # Per-card settings:
     method uploadkey(Str $card) {
         return $self->_cardsetting($card, 'uploadkey');
@@ -400,7 +406,8 @@ class RIFEC::Session {
 	my $known_txmodes = 1<<1 | 1<<5 | 1<<9;
 
 	if ($args->{'transfermode'} & ~$known_txmodes) {
-	    confess sprintf("Unsupported transfermode '%s' from card '%s' (%s)",
+	    confess sprintf("Unsupported transfermode '%s' from card '%s' (%s)," .
+                            " See TROUBLESHOOTING.txt for info about what this means",
                             $args->{'transfermode'},
                             $config->cardname($args->{'card'}),
                             $args->{'card'});
@@ -421,7 +428,6 @@ class RIFEC::Session {
 }
 
 class RIFEC::File {
-    use Archive::Tar;
     use File::Spec;
     use File::Temp qw();
     use Digest::MD5 qw();
@@ -465,19 +471,19 @@ class RIFEC::File {
         return pack("S", ~$val);
     }
 
-    method _calculate_integritydigest(Str $block) {
+    method _calculate_integritydigest(ScalarRef $blockref) {
 	$log->debug("Calculating integrity digest...");
 
 	# Make sure it is 512-block aligned (it should be)
 	confess "Content block not 512-byte aligned!"
-	    if length($block) % 512;
+	    if length($$blockref) % 512;
 
 	my $md5 = Digest::MD5->new();
 
 	my $i = 0;
-	while ($i < length($block)) {
+	while ($i < length($$blockref)) {
 	    $md5->add(
-		$self->_calculate_tcp_checksum( substr($block, $i, 512) ));
+		$self->_calculate_tcp_checksum( substr($$blockref, $i, 512) ));
 	    $i += 512;
 	}
 	$md5->add(pack("H*", $config->uploadkey($self->session()->card())));
@@ -488,7 +494,7 @@ class RIFEC::File {
 	return lc $md5sum;
     }
 
-    method store_content(Str $content) {
+    method store_content(ScalarRef $contentref) {
 	my $folder = $config->folder($self->session->card);
 
 	confess sprintf("Top-level destination directory '%s' not found", $folder)
@@ -502,7 +508,7 @@ class RIFEC::File {
 	# transfer.  We can't check them yet, though, since the
 	# content is received before the integritydigest from the
 	# card.
-	$self->calculated_digest( $self->_calculate_integritydigest($content) );
+	$self->calculated_digest( $self->_calculate_integritydigest($contentref) );
 
 	my $tfh = File::Temp->new(
 	    TEMPLATE => sprintf(".rifec-transit-%d-XXXXXXXX", $$),
@@ -510,7 +516,7 @@ class RIFEC::File {
 	    UNLINK   => 0);
 	my $tfn = $tfh->filename;
 
-	print $tfh $content;
+	print $tfh $$contentref;
 	$tfh->close() or confess "Unable to close '$tfn': $!";
 	$self->_tarfile($tfn); # Remember where we put it
 	$log->debug("Saved file '%s' ('%s')", $tfn, $self->tarfilename());
@@ -626,48 +632,65 @@ class RIFEC::File {
     }
 
     method _extract_tarfile() {
-	my $tar = Archive::Tar->new($self->_tarfile());
+        my $tar_cmd  = $config->tarcommand;
+        my $tar_file = $self->_tarfile;
 
-	my @files = $tar->get_files();
+        my @files = `$tar_cmd -tf $tar_file`;
+        # Remove leading and trailing whitespace from each element:
+        foreach my $f (@files) {
+            $f =~ s/\A \s*//xg;
+            $f =~ s/\s* \z//xg;
+        }
+        $log->debug("Files in tarball on disk: %s", join(", ", @files));
+
 	confess sprintf("I don't know how to handle tarballs with >1 files! (%s)",
-                        join(", ", map { $_->name } @files))
+                        join(", ", @files))
 	    if scalar(@files) > 1;
 
-	my $f = shift @files;
-	confess sprintf("Illegal name of file inside tarball: '%s'", $f->name)
-	    unless $f->name =~ $RIFEC::File::filename_regexp;
+	my $fn = shift @files;
+	confess sprintf("Illegal name of file inside tarball: '%s'", $fn)
+	    unless $fn =~ $RIFEC::File::filename_regexp;
 
         # The temp store file goes in the top-level dir, not the
         # per-date-dir:
 	my $tfh = File::Temp->new(
 	    TEMPLATE => sprintf(".rifec-store-%d-XXXXXXXX", $$),
-	    DIR      => $config->folder( $self->session()->card() ),
+	    DIR      => $config->folder( $self->session->card ),
 	    UNLINK   => 0);
 	my $tfn = $tfh->filename;
 
-	$log->debug("Writing image '%s' to tempfile '%s'", $f->name, $tfn);
-
-	print $tfh $f->get_content();
+	$log->debug("Writing data file '%s' to tempfile '%s'", $fn, $tfn);
+        # tar -xOf /tmp/movfile.tar DSC_1720.MOV > fnordmovie.mov
+        my $extract_command = "$tar_cmd -xOf $tar_file $fn > $tfn";
+        $log->trace("Extract command: '$extract_command'");
+        {
+            local $SIG{CHLD} = '';
+            my $status = system($extract_command);
+            confess "Failed to run '$tar_cmd': $!\n"
+                if $status == -1;
+            confess "Failure exit status from '$tar_cmd': " . $status >> 8
+                if $status != 0;
+        }
 	$tfh->flush() or confess "Unable to flush '$tfn': $!";
 	$tfh->sync()  or confess "Unable to sync '$tfn': $!";
 	$tfh->close() or confess "Unable to close '$tfn': $!";
 
 	# Return the filename of the file in the tarball plus the
 	# tempfile this file is currently stored in:
-	return ($f->name, $tfn);
+	return ($fn, $tfn);
     }
 
     method extract() {
 	# Extract the tar file and save the contents to a temp file:
-	my ($filename, $tempcontent) = $self->_extract_tarfile();
+	my ($filename, $tmpfilename) = $self->_extract_tarfile();
 
         # Create the sub folder if necessary:
-        my $dest_folder = $self->_subfolder($tempcontent);
+        my $dest_folder = $self->_subfolder($tmpfilename);
 
 	# Do the hard linking from the final file name to the temp
 	my $full_filename = File::Spec->catfile($dest_folder, $filename);
 
-	my $outfile = $self->_link_file($tempcontent, $full_filename);
+	my $outfile = $self->_link_file($tmpfilename, $full_filename);
 
 	$log->warning("Destination file '%s' saved as '%s' to avoid collision",
                       $full_filename, $outfile)
@@ -680,9 +703,9 @@ class RIFEC::File {
             or confess sprintf("Unable to unlink tarfile '%s': $!",
                                $self->_tarfile);
 
-	$log->debug("Removing temp file '%s'", $tempcontent);
-        unlink $tempcontent
-            or confess "Unable to unlink tempfile '$tempcontent': $!";
+	$log->debug("Removing temp file '%s'", $tmpfilename);
+        unlink $tmpfilename
+            or confess "Unable to unlink tempfile '$tmpfilename': $!";
 
 	# Chmod it to use the default umask
 	chmod 0666 & ~umask(), $self->_file
@@ -850,7 +873,7 @@ class RIFEC::Handler {
 	    });
     }
 
-    method _soapenvelope($part where { $_->isa('HTTP::Message') }) {
+    method init_file_object($part where { $_->isa('HTTP::Message') }) {
 	my $content = $part->content();
 
         my $soapbody;
@@ -885,12 +908,12 @@ class RIFEC::Handler {
 		   $self->session->card);
 
 	confess "Session un-authenticated, upload is a no-go"
-	    unless $self->session()->authenticated();
+	    unless $self->session->authenticated;
 
 	my $file;
 
 	my @expected_parts = ('SOAPENVELOPE', 'FILENAME', 'INTEGRITYDIGEST');
-	foreach my $part ($request->parts())
+	foreach my $part ($request->parts)
 	{
 	    my ($partname) = $part->headers_as_string() =~ /name="(.*?)"/x;
 	    confess "Unable to extract name from part header" unless $partname;
@@ -902,22 +925,25 @@ class RIFEC::Handler {
 
 	    if ($partname eq 'SOAPENVELOPE')
 	    {
+                $log->trace("Upload: Processing SOAPENVELOPE part");
 		# The RIFEC::File object is initialized from the values
 		# in the SOAP envelope:
-		$file = $self->_soapenvelope($part);
+		$file = $self->init_file_object($part);
 	    }
 	    elsif ($partname eq 'FILENAME')
 	    {
+                $log->trace("Upload: Processing FILENAME part");
 		# Sanity checking:
 		my ($fn) = $part->headers_as_string() =~ /filename="(.*?)"/x;
 		confess "Unable to extract filename from part header" unless $fn;
 		confess "File name differs from RIFEC::File state"
 		    unless $fn eq $file->tarfilename();
-		$file->store_content($part->content());
+		$file->store_content($part->content_ref);
 	    }
 	    elsif ($partname eq 'INTEGRITYDIGEST')
 	    {
-		$file->integritydigest($part->content());
+                $log->trace("Upload: Processing INTEGRITYDIGEST part");
+		$file->integritydigest($part->content);
 	    }
 	}
 
