@@ -107,6 +107,14 @@ class RIFEC::Config {
         if ($ts ne "exif" && $ts ne "local") {
             confess "Unrecognized SubFolderTimeSource '$ts'";
         }
+
+        # Verify that the tar command looks sane:
+        my $tc = $self->tarcommand;
+        my $help = "Please tell me where tar is by adding 'TarCommand=/path/to/tar' to your config file";
+        confess "'$tc' not found: $help"
+            unless -e $tc;
+        confess "'$tc' is not executable: $help"
+            unless -x $tc;
     }
 
     method _build_cardlist() {
