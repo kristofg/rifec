@@ -29,11 +29,11 @@ Dependencies
 On Fedora 14 and 15, yum installing the following packages should be
 sufficient to run the script:
 
+tar
 perl-MooseX-Declare
 perl-Config-IniFiles
 perl-libwww-perl
 perl-MD5
-perl-Archive-Tar
 perl-IO-stringy
 perl-XML-Simple
 perl-Proc-Daemon
@@ -42,12 +42,12 @@ perl-Params-Validate
 Un Ubuntu, apt-get installing the following packages should do the
 trick:
 
+tar
 libmoose-perl
 libmoosex-declare-perl
 libconfig-inifiles-perl
 libwww-perl
 libdigest-md5-perl
-libarchive-tar-perl
 libio-stringy-perl
 libxml-simple-perl
 libproc-daemon-perl
