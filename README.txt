@@ -35,6 +35,8 @@ of a local computer running Linux.
 What can it NOT do?
 ===================
 
+See also the "Todo" and "Ideas" sections further down.
+
 * The geotagging feature is currently not supported.
 
 * Different destination directories for different file types coming
@@ -74,6 +76,9 @@ server.
 
 Todo
 ====
+
+* Tests. It's amazing how fast a small program becomes big enough to
+  allow bugs to hide in the corners where people rarely go.
 
 * Limit the number of forked threads, to make it just a little less
   DoS'able
