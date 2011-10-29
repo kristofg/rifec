@@ -19,12 +19,18 @@
 # 02110-1301, USA.
 #
 
+# There are two global objects, ::Config and ::Log, each accessed
+# through a global variable. At the bottom of the script, there is a
+# plain sub implementing the listen/fork loop on the socket. For each
+# incoming connection, it instantiates a ::Handler object. All
+# incoming requests on the same connection is sent there. The
+# ::Session and ::File objects are helper objects used internally by
+# the ::Handler.
+
 use strict;
 use warnings;
-
 use MooseX::Declare;
 
-# One global var for the log object, and one for the config object.
 my $log;
 my $config;
 
@@ -339,7 +345,6 @@ class RIFEC::Log {
 	$self->_print_if('warning', @str);
     }
 }
-
 
 class RIFEC::Session {
     use Digest::MD5 qw(md5_hex);
@@ -672,6 +677,8 @@ class RIFEC::File {
         my $extract_command = "$tar_cmd -xOf $tar_file $fn > $tfn";
         $log->trace("Extract command: '$extract_command'");
         {
+            # unset SIGCHLD handler, since system() expects to wait on
+            # its children:
             local $SIG{CHLD} = '';
             my $status = system($extract_command);
             confess "Failed to run '$tar_cmd': $!\n"
@@ -1055,59 +1062,61 @@ class RIFEC::Handler {
     }
 }
 
-class RIFEC::Server {
-    use HTTP::Daemon;
-    use HTTP::Status;
-    use Carp qw(confess);
+#
+# End of class declarations
+#
 
-    method run() {
-        local $SIG{CHLD} = 'IGNORE';
+use Getopt::Long;
+use Pod::Usage;
+use Proc::Daemon;
+use HTTP::Daemon;
+use HTTP::Status;
+use Carp qw(confess);
 
-        my $d = HTTP::Daemon->new(LocalPort => $config->port(),
-				  ReuseAddr => 1)
-	    || confess "Unable to instantiate HTTP Daemon: $!";
-	$log->info("Listening on %s", $d->url());
+# A plain sub containing the listen/fork loop:
+sub run_listener {
+    local $SIG{CHLD} = 'IGNORE';
 
-	while (my $conn = $d->accept())
-	{
-	    $log->debug("Connect from %s:%d", $conn->peerhost(), $conn->peerport());
-	    $config->bump_counter();
+    my $d = HTTP::Daemon->new(LocalPort => $config->port(),
+                              ReuseAddr => 1)
+        || confess "Unable to instantiate HTTP Daemon: $!";
+    $log->info("Listening on %s", $d->url());
 
-	    my $pid = fork();
-	    if ($pid == 0) { # Child
-		$conn->timeout($config->sockettimeout());
-		my $handler = RIFEC::Handler->new();
-		while (my $req = $conn->get_request())
-		{
-		    $log->debug("%s:%d -> %s %s",
-				$conn->peerhost(), $conn->peerport(),
-				$req->method, $req->uri->path);
-                    #$log->trace("Request headers: " . $req->headers_as_string());
-		    # All sanity checking is done in the handler
-		    my $http_reply = $handler->dispatch($req);
-		    $conn->send_response($http_reply);
-		}
-		$log->debug("Closed connection!");
+    while (my $conn = $d->accept())
+    {
+        $log->debug("Connect from %s:%d", $conn->peerhost(), $conn->peerport());
+        $config->bump_counter();
 
-		$conn->close();
-		undef($conn);
-		undef($handler);
-		exit 0;
-	    }
-	    else { # Parent
-		$log->debug("Child %d forked, going back to accept()", $pid);
-	    }
-	}
+        my $pid = fork();
+        if ($pid == 0) { # Child
+            $conn->timeout($config->sockettimeout());
+            my $handler = RIFEC::Handler->new();
+            while (my $req = $conn->get_request())
+            {
+                $log->debug("%s:%d -> %s %s",
+                            $conn->peerhost(), $conn->peerport(),
+                            $req->method, $req->uri->path);
+                #$log->trace("Request headers: " . $req->headers_as_string());
+                # All sanity checking is done in the handler
+                my $http_reply = $handler->dispatch($req);
+                $conn->send_response($http_reply);
+            }
+            $log->debug("Closed connection!");
+
+            $conn->close();
+            undef($conn);
+            undef($handler);
+            exit 0;
+        }
+        else { # Parent
+            $log->debug("Child %d forked, going back to accept()", $pid);
+        }
     }
 }
 
 # We don't support a lot of command line options, we defer to the
 # config file for configuration.  However, we need a --help, and a
 # possibility to set custom config files:
-
-use Getopt::Long;
-use Pod::Usage;
-use Proc::Daemon;
 
 my $cf_file;
 my $daemonize;
@@ -1119,11 +1128,9 @@ GetOptions('help|h|?'    => sub { pod2usage(0) },
 
 $config    = RIFEC::Config->new('file' => $cf_file);
 $log       = RIFEC::Log->new();
-my $server = RIFEC::Server->new();
 
 $config->say_hello();
-# Daemonize after all the setup, since we want to be able to sanity
-# check parameters etc. while still in the foreground
+
 if ($daemonize) {
     if ($log->_fh->fileno == fileno(STDOUT)) {
 	$log->warning("Daemon mode enabled while logging to STDOUT: " .
@@ -1134,7 +1141,7 @@ if ($daemonize) {
     $log->open(); # since Proc::Daemon::Init closes all open fh's
 }
 
-$server->run();
+run_listener();
 
 __END__
 

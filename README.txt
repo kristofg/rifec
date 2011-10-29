@@ -4,14 +4,14 @@ RIFEC: Receive Images From Eye-Fi Cards
 rifec.pl is a standalone program that receives images from Eye-Fi
 cards and stores them to disk.
 
-It works great with my Pro X2 card running firmware 4.5157 (4.5022,
-4.2172 and 4.2139 worked fine as well).  I have not tested other
-versions, but feedback from people who have is welcome.
+It works great with my Pro X2 card running firmware 4.5166 (4.5157,
+4.5022, 4.2172 and 4.2139 worked fine as well).  Feedback from people
+who have tested other cards and versions is welcome.
 
-It runs mainly on Linux, but making it run on other Unix variants
-should be trivial.  It is written in Perl, uses some CPAN modules, and
-is GPL.  See the file INSTALL.txt for more information on installation
-and dependencies.
+I have only tested it on Linux, but making it run on other Unix
+variants should be trivial.  It is written in Perl 5, uses some CPAN
+modules, and is GPL.  See the file INSTALL.txt for more information on
+installation and dependencies.
 
 This is third-party software; it is not developed nor supported by
 Eye-Fi.  Because of this, there will be limitations in what it can do
@@ -23,11 +23,10 @@ What can it do?
 ===============
 
 The primary use case is to have the images saved directly to the disk
-of a local computer running Linux.
+of a Linux computer on the same WLAN as the camera and card.
 
-* It supports multiple cards, identified by MAC address.  The
-  destination directory can be configured per card or as a shared
-  setting.
+* It supports multiple cards.  The destination directory can be
+  configured per card or as a shared setting.
 
 * It supports date-based destination directories, based on the clock
   on the receiving computer at the time of transfer.
@@ -35,7 +34,9 @@ of a local computer running Linux.
 What can it NOT do?
 ===================
 
-See also the "Todo" and "Ideas" sections further down.
+See also the "Todo" and "Ideas" sections further down. The main reason
+for not supporting these things are lack of time and need. If someone
+has time and need, patches are welcome!
 
 * The geotagging feature is currently not supported.
 
