@@ -4,8 +4,8 @@ RIFEC: Receive Images From Eye-Fi Cards
 rifec.pl is a standalone program that receives images from Eye-Fi
 cards and stores them to disk.
 
-It works great with my Pro X2 card running firmware 4.5166 (4.5157,
-4.5022, 4.2172 and 4.2139 worked fine as well).  Feedback from people
+It works great with my Pro X2 card running firmware 5.0001 (all the
+4.x versions I have tried worked fine as well).  Feedback from people
 who have tested other cards and versions is welcome.
 
 I have only tested it on Linux, but making it run on other Unix
@@ -31,6 +31,10 @@ of a Linux computer on the same WLAN as the camera and card.
 * It supports date-based destination directories, based on the clock
   on the receiving computer at the time of transfer.
 
+* It supports different destination directories for different file
+  types coming from the same card, so you can store jpeg files in one
+  directory, raw files in another, and videos in a third.
+
 What can it NOT do?
 ===================
 
@@ -40,14 +44,12 @@ has time and need, patches are welcome!
 
 * The geotagging feature is currently not supported.
 
-* Different destination directories for different file types coming
-  from the same card (like RAW+JPEG) is currently not supported.
-
 * Running programs (hooks) to manipulate the images after they are
   saved is currently not supported.
 
 * Date-based destination directories based on the image (EXIF) date is
-  currently not supported.
+  currently not supported (note that date-based destination
+  directories based on the time of transfer works fine.)
 
 
 Resources and other implementations

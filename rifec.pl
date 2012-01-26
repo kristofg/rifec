@@ -41,27 +41,29 @@ class RIFEC::Config {
     use Data::Dumper;
     use Carp qw(confess);
     use POSIX qw();
+    use Params::Validate qw(validate);
 
-    has 'file' => (is       => 'rw');
-
-    has '_cfg' => (isa      => 'Config::IniFiles',
-		   is       => 'ro',
-		   lazy     => 1,
-		   builder  => '_read_inifile');
-
-    has '_card' => (isa     => 'HashRef',
-		    is      => 'ro',
-		    lazy    => 1,
-		    builder => '_build_cardlist');
-
-    # Yes, this is slightly redundant: We could have used the _card hash
-    has '_known_cards' => (isa     => 'ArrayRef',
-			   is      => 'rw',
-			   default => sub { [] });
-
-    # Share this across all uploads in a session, so we don't hand out
-    # exactly the same file id all the time
+    has 'file'     => (is  => 'rw');
     has '_counter' => (isa => 'Int', is => 'rw', default => 0);
+
+    has '_cfg' => (isa     => 'HashRef',
+                   is      => 'ro',
+                   lazy    => 1,
+                   builder => '_build_config');
+
+    our $card_section_re     = qr/\A card \s+ (.*?)\z/xi;
+    our $filetype_section_re = qr/\A filetype \s+ (.*?)\z/xi;
+    our $from_section_re     = qr/\A from \s+ (.*?) \s+ filetype \s+ (.*?)\z/xi;
+
+    method normalize_mac(Str $in) {
+	my $ret = $in;
+	$ret =~ s/[-: ]//gx;
+
+        confess "'$in' doesn't look like a MAC address"
+            unless $ret =~ m|\A [a-z0-9]{12} \z|xi;
+
+	return lc $ret;
+    }
 
     method _read_inifile() {
 	# Fall back to default if undef or empty:
@@ -77,175 +79,253 @@ class RIFEC::Config {
 	confess sprintf("Config file '%s' is empty", $self->file)
 	    unless -s $self->file;
 
-	my $c = Config::IniFiles->new(-file       => $self->file,
-				      -nocase     => 1,
-                                      -allowempty => 0,
-				      -default    => 'main');
+        my %cfg;
+        tie(%cfg, 'Config::IniFiles', (-file       => $self->file,
+                                       -nocase     => 1,
+                                       -allowempty => 0));
 	confess "Unable to read config file: ", Dumper(@Config::IniFiles::errors)
-	    unless defined($c) && $c;
-
-	return $c;
+	    unless %cfg;
+	return \%cfg;
     }
 
-    method _normalize_mac(Str $in) {
-	my $ret = $in;
-	$ret =~ s/[-: ]//gx;
+    method _validate_inifile(HashRef $ini) {
+        my %paramspec_of = (
+            $card_section_re => {
+                'macaddress' => 1,
+                'uploadkey'  => 1,
+                'folder'     => 0,
+                'subfolder'  => 0,
+            },
+            $from_section_re => {
+                'folder'    => 0,
+                'subfolder' => 0,
+            },
+            $filetype_section_re => {
+                'folder'    => 0,
+                'subfolder' => 0,
+            },
+            qr/\A main \z/xi => {
+                'logfile'             => 1,
+                'loglevel'            => 1,
+                'port'                => 1,
+                'sockettimeout'       => 1,
+                'subfoldertimesource' => 0,
+                'tarcommand'          => 0,
+                'folder'              => 0,
+                'subfolder'           => 0,
+            },
+            );
 
-        confess "'$in' doesn't look like a MAC address"
-            unless $ret =~ m|\A [a-z0-9]{12} \z|xi;
+        foreach my $key (keys %$ini) {
+            # Find the paramspec for this type of section:
+            my @match = grep { $key =~ $_ } keys %paramspec_of;
+            # Every section should match one and only one paramspec:
+            if (scalar(@match) != 1) {
+                confess sprintf("Unrecognized or malformed config section name '%s'",
+                                $key);
+            }
 
-	return lc $ret;
+            my @inifields = %{$ini->{$key}};
+            validate(@inifields, $paramspec_of{$match[0]});
+        }
     }
 
-    method _verify_card_settings(HashRef $settings) {
-        # Verify that the settings we must have to save pictures are
-        # set:
-        foreach my $key ('uploadkey', 'folder') {
-            confess sprintf("Missing or blank '%s' for card '%s'",
-                            $key, $settings->{'name'})
-                unless $settings->{$key};
+    method _build_config() {
+        my $filecfg = $self->_read_inifile();
+        $self->_validate_inifile($filecfg);
+        my $c = {};
+
+        # Main section:
+        foreach my $s (keys %{ $filecfg->{'main'} }) {
+            $c->{'main'}->{$s} = $filecfg->{'main'}->{$s};
         }
 
-        # Verify that the subfolder settings - if set - make sense and
-        # can be used. (It's a no-op if SubFolder is blank, but that's
-        # no reason to put garbage into it)
-        my $ts = lc $settings->{'subfoldertimesource'};
-        if ($ts ne "exif" && $ts ne "local") {
-            confess "Unrecognized SubFolderTimeSource '$ts'";
+        # top-level filetype sections:
+        foreach my $ft_section (grep { $_ =~ $filetype_section_re } keys %$filecfg) {
+            $ft_section =~ $filetype_section_re
+                || confess "Unexpected regexp mismatch";
+            my $type = $1;
+            foreach my $f (keys %{ $filecfg->{$ft_section} }) {
+                $c->{'filetypes'}->{$type}->{$f} = $filecfg->{$ft_section}->{$f};
+            }
         }
+
+        # card sections:
+        foreach my $card_section (grep { $_ =~ $card_section_re } keys %$filecfg) {
+            $card_section =~ $card_section_re
+                || confess "Unexpected regexp mismatch";
+            my $cardname = $1;
+            foreach my $s (keys %{ $filecfg->{$card_section}}) {
+                my $value = $filecfg->{$card_section}->{$s};
+                if ($s eq 'macaddress') {
+                    $value = $self->normalize_mac($value);
+                }
+                $c->{'cards'}->{$cardname}->{$s} = $value;
+            }
+            # We are messing around with card names here, but the
+            # actual config lookups will be by MAC:
+            my $mac = $c->{'cards'}->{$cardname}->{'macaddress'};
+            $c->{'macs'}->{$mac} = $c->{'cards'}->{$cardname};
+            # Add the name to the hash, so the people who've only got
+            # the MAC can get at it:
+            $c->{'cards'}->{$cardname}->{'name'} = $cardname;
+        }
+
+        # from X filetype Y sections:
+        foreach my $from_section (grep { $_ =~ $from_section_re } keys %$filecfg) {
+            $from_section =~ $from_section_re
+                || confess "Unexptected regexp mismatch";
+            my $card = $1;
+            my $type = $2;
+
+            confess sprintf("section '%s' doesn't match any card names!",
+                            $from_section)
+                unless exists $c->{'cards'}->{$card};
+
+            foreach my $s (keys %{ $filecfg->{$from_section} }) {
+                $c->{'cards'}->{$card}->{'filetypes'}->{$type}->{$s} =
+                    $filecfg->{$from_section}->{$s};
+            }
+        }
+
+        #print STDERR "Config hash dump: ", Dumper($c), "\n";
+        return $c;
+    }
+
+    method say_hello() {
+        $log->info("Config file '%s', %d card(s) configured:",
+                   Cwd::abs_path($self->file),
+                   scalar keys %{ $self->_cfg->{'cards'} });
+
+        foreach my $card (keys %{ $self->_cfg->{'cards'} }) {
+            $log->info("    Card '%s' (%s)",
+                       $card,
+                       $self->_cfg->{'cards'}->{$card}->{'macaddress'});
+        }
+    }
+
+    method doiknow(Str $mac) {
+        $mac = $self->normalize_mac($mac);
+
+        confess sprintf("Sorry, I don't know the card with MAC '%s'", $mac)
+            unless exists $self->_cfg->{'macs'}->{$mac};
+
+        return 1;
+    }
+
+    method check_writeable_dir(Str $dir) {
+	confess sprintf("Destination directory '%s' not found", $dir)
+	    unless -e $dir;
+	confess sprintf("Destination directory '%s' not a directory", $dir)
+	    unless -d $dir;
+	confess sprintf("Destination directory '%s' not writeable", $dir)
+	    unless -w $dir;
+    }
+
+    # Actual config accessors.
+    method logfile() {
+        return $self->_cfg->{'main'}->{'logfile'};
+    }
+
+    method loglevel() {
+        return $self->_cfg->{'main'}->{'loglevel'};
+    }
+
+    method port() {
+        return $self->_cfg->{'main'}->{'port'} || 59278;
+    }
+
+    method sockettimeout() {
+        return $self->_cfg->{'main'}->{'sockettimeout'} || 600;
+    }
+
+    method tarcommand() {
+        my $tc = $self->_cfg->{'main'}->{'tarcommand'} || "/bin/tar";
 
         # Verify that the tar command looks sane:
-        my $tc = $self->tarcommand;
-        my $help = "Please tell me where tar is by adding 'TarCommand=/path/to/tar' to your config file";
+        my $help = "Please tell me where tar is by adding 'TarCommand=/path/to/tar' to the main section of your config file";
         confess "'$tc' not found: $help"
             unless -e $tc;
         confess "'$tc' is not executable: $help"
             unless -x $tc;
+
+        return $tc;
     }
 
-    method _build_cardlist() {
-	my $c = $self->_cfg()
-	    || confess "Configuration not initialized yet!";
-	my %card;
-	$self->_known_cards( () );
-
-	foreach my $s ($c->Sections()) {
-	    next if $s eq 'main';
-
-	    if ($s =~ /\A card \s+ (.*?) \z/xi) {
-		my $cardname = $1;
-		my $mac = $self->_normalize_mac( $self->_get($s, 'MacAddress') );
-
-		confess sprintf("Card '$mac' defined multiple times: '%s', '%s'",
-                                $card{$mac}->{'name'}, $cardname)
-		    if exists $card{$mac};
-
-		$card{$mac} = {
-                    'name'                => $cardname,
-                    'uploadkey'           => $self->_get($s, 'UploadKey'),
-                    'folder'              => $self->_get($s, 'Folder'),
-                    'subfolder'           => $self->_get($s, 'SubFolder', 1),
-                    'subfoldertimesource' => $self->_get($s, 'SubFolderTimeSource', 1),
-                };
-                # Default values for blanks:
-                $card{$mac}->{'subfoldertimesource'} ||= "exif";
-                $self->_verify_card_settings($card{$mac});
-
-		push(@{ $self->_known_cards }, $mac);
-            }
-	    else {
-		confess sprintf("I don't know what to do with section '%s'", $s);
-	    }
-	}
-	return \%card;
-    }
-
-    method _get(Str $section, Str $param, Bool $optional? = 0) {
-	my $v = $self->_cfg()->val($section, $param);
-
-        # if not optional, it can still be blank, but it must be
-        # present, ie. defined:
-	confess sprintf("Can't find config value '%s' in section '%s'",
-                        $param, $section)
-	    unless $optional || defined $v;
-
-	return $v;
-    }
-
-    method _cardsetting(Str $card, Str $setting) {
-	my $mac = $self->_normalize_mac($card);
-        $self->doiknow($mac);
-	return $self->_card->{$mac}->{$setting};
-    }
-
-    method say_hello() {
-	$log->info("Config file '%s', %d card(s) configured:",
-                   Cwd::abs_path($self->file),
-                   scalar keys %{ $self->_card });
-
-        foreach my $card (keys %{ $self->_card }) {
-            $log->info("    Card '%s' (%s), writing to '%s' + '%s'",
-                       $self->cardname($card),
-                       $card,
-                       $self->folder($card),
-                       $self->subfolder($card) || '');
-        }
-    }
-
-    method doiknow(Str $card) {
-	my $mac = $self->_normalize_mac($card);
-
-	confess sprintf("Sorry, I don't know the card with MAC '%s'", lc $mac)
-	    unless grep { $mac eq $_ } @{ $self->_known_cards };
-
-	return 1;
-    }
-
-    # Actual config accessors:
-    method loglevel() {
-	return $self->_get('main', 'LogLevel');
-    }
-
-    method logfile() {
-	return $self->_get('main', 'LogFile');
-    }
-
-    method port() {
-	return $self->_get('main', 'Port');
-    }
-
-    method sockettimeout() {
-	return $self->_get('main', 'SocketTimeout');
-    }
-
-    method tarcommand() {
-	my $tc_val = $self->_get('main', 'TarCommand', 1);
-        $tc_val ||= "/bin/tar";
-        return $tc_val;
+    method subfoldertimesource() {
+        return $self->_cfg->{'main'}->{'subfoldertimesource'} || "local";
     }
 
     # Per-card settings:
-    method uploadkey(Str $card) {
-        return $self->_cardsetting($card, 'uploadkey');
+    method _mac_setting(Str $mac, Str $setting) {
+        $self->doiknow($mac);
+        $mac = $self->normalize_mac($mac);
+
+        confess sprintf("Error looking up setting '%s' for card '%s'",
+                        $setting, $mac)
+            unless exists $self->_cfg->{'macs'}->{$mac}->{$setting};
+
+        return $self->_cfg->{'macs'}->{$mac}->{$setting};
     }
 
-    method folder(Str $card) {
-        return $self->_cardsetting($card, 'folder');
+    method cardname(Str $mac) {
+        return $self->_mac_setting($mac, 'name');
     }
 
-    method subfolder(Str $card) {
-        return $self->_cardsetting($card, 'subfolder');
+    method uploadkey(Str $mac) {
+        return $self->_mac_setting($mac, 'uploadkey');
     }
 
-    method subfoldertimesource(Str $card) {
-        return $self->_cardsetting($card, 'subfoldertimesource');
+    method _foldersetting(Str $setting, Str $mac, Str $filename) {
+        $self->doiknow($mac);
+        $mac = $self->normalize_mac($mac);
+
+        if (defined($filename) && $filename) {
+            $filename =~ / \. ([^ \.]*?) \z/xi
+                || confess "Unable to extract file type from name '$filename'";
+            my $type = lc $1;
+
+            if (exists $self->_cfg->{'macs'}->{$mac}->{'filetypes'}->{$type} &&
+                exists $self->_cfg->{'macs'}->{$mac}->{'filetypes'}->{$type}->{$setting})
+            {
+                return $self->_cfg->{'macs'}->{$mac}->{'filetypes'}->{$type}->{$setting};
+            }
+
+            if (exists $self->_cfg->{'filetypes'}->{$type} &&
+                exists $self->_cfg->{'filetypes'}->{$type}->{$setting})
+            {
+                return $self->_cfg->{'filetypes'}->{$type}->{$setting};
+            }
+        }
+
+        if (exists $self->_cfg->{'macs'}->{$mac}->{$setting}) {
+            return $self->_cfg->{'macs'}->{$mac}->{$setting};
+        }
+
+        if (exists $self->_cfg->{'main'}->{$setting}) {
+            return $self->_cfg->{'main'}->{$setting}
+        }
+
+        return;
     }
 
-    method cardname(Str $card) {
-        return $self->_cardsetting($card, 'name');
+    method folder(Str $mac, Str $filename?) {
+        my $f =  $self->_foldersetting('folder', $mac, $filename || '');
+
+        confess sprintf("Error looking up folder for card '%s' file '%s'",
+                        $self->_cfg->{'macs'}->{$mac}->{'name'},
+                        $filename || '')
+            unless defined($f) && $f;
+
+        $self->check_writeable_dir($f);
+        return $f;
     }
 
-    # I have no idea how important this ID really is
+    method subfolder(Str $mac, Str $filename?) {
+        return $self->_foldersetting('subfolder', $mac, $filename || '');
+    }
+
+    #
     method counter() {
 	return $self->_counter();
     }
@@ -509,13 +589,7 @@ class RIFEC::File {
 
     method store_content(ScalarRef $contentref) {
 	my $folder = $config->folder($self->session->card);
-
-	confess sprintf("Top-level destination directory '%s' not found", $folder)
-	    unless -e $folder;
-	confess sprintf("Top-level destination directory '%s' not a directory", $folder)
-	    unless -d $folder;
-	confess sprintf("Top-level destination directory '%s' not writeable", $folder)
-	    unless -w $folder;
+        $config->check_writeable_dir($folder);
 
 	# Calculate our integritydigest while the file contents are in
 	# transfer.  We can't check them yet, though, since the
@@ -567,29 +641,28 @@ class RIFEC::File {
 	return 1;
     }
 
-    method _subfolder(Str $tmpimage) {
+    method _subfolder(Str $tmpimage, Str $imagefilename) {
         my $card = $self->session->card;
 
-        my $topfolder   = $config->folder($card);
+        my $topfolder = $config->folder($card, $imagefilename);
         my $subfolder;
-        my $subtemplate = $config->subfolder($card);
+        my $subtemplate = $config->subfolder($card, $imagefilename);
+
+        # We can create sub folders, but the top folders should be there:
+        $config->check_writeable_dir($topfolder);
 
         if (!$subtemplate || $subtemplate =~ /\A \s* \z/mxi) {
-            $log->debug("Empty/blank subfolder for card '%s', save to top folder '%s'",
+            $log->debug("Card '%s' file '%s': Root folder '%s', empty/blank subfolder",
                         $config->cardname($card),
+                        $imagefilename,
                         $topfolder);
             return $topfolder;
         }
 
-        if ($config->subfoldertimesource($card) eq 'exif') {
-            confess "Sorry, EXIF time source is not implemented yet";
-            #my $dt = Image::ExifTool::ImageInfo($tmpimage, 'DateTimeOriginal');
-            # ...
+        if ($config->subfoldertimesource() ne 'local') {
+            confess "Sorry, other time sources than 'local' is not implemented yet";
         }
-        # Default/fallback: Use computer clock at time of transfer:
-        else {
-            $subfolder = POSIX::strftime($subtemplate, localtime());
-        }
+        $subfolder = POSIX::strftime($subtemplate, localtime());
 
         my $destination = File::Spec->catfile($topfolder, $subfolder);
         $log->debug("Destination subdirectory: '%s' -> '%s', full path: '%s'",
@@ -603,11 +676,7 @@ class RIFEC::File {
                 or confess "Unable to mkdir '$destination': $!";
         }
         # Sanity check:
-	confess sprintf("Destination directory '%s' not a directory", $destination)
-	    unless -d $destination;
-	confess sprintf("Destination directory '%s' not writeable", $destination)
-	    unless -w $destination;
-
+        $config->check_writeable_dir($destination);
         return $destination;
     }
 
@@ -664,8 +733,6 @@ class RIFEC::File {
 	confess sprintf("Illegal name of file inside tarball: '%s'", $fn)
 	    unless $fn =~ $RIFEC::File::filename_regexp;
 
-        # The temp store file goes in the top-level dir, not the
-        # per-date-dir:
 	my $tfh = File::Temp->new(
 	    TEMPLATE => sprintf(".rifec-store-%d-XXXXXXXX", $$),
 	    DIR      => $config->folder( $self->session->card ),
@@ -699,8 +766,8 @@ class RIFEC::File {
 	# Extract the tar file and save the contents to a temp file:
 	my ($filename, $tmpfilename) = $self->_extract_tarfile();
 
-        # Create the sub folder if necessary:
-        my $dest_folder = $self->_subfolder($tmpfilename);
+        # Create the destination sub folder if necessary:
+        my $dest_folder = $self->_subfolder($tmpfilename, $filename);
 
 	# Do the hard linking from the final file name to the temp
 	my $full_filename = File::Spec->catfile($dest_folder, $filename);
