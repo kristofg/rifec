@@ -367,7 +367,7 @@ class RIFEC::Log {
 
     method open() {
 	if (my $lf = $config->logfile()) {
-	    my $fh = IO::File->new($lf, O_WRONLY|O_APPEND)
+	    my $fh = IO::File->new($lf, O_WRONLY|O_APPEND|O_CREAT)
 		or confess "Unable to open logfile '$lf' for writing: $!";
 	    $self->_fh($fh);
 	}
@@ -670,12 +670,21 @@ class RIFEC::File {
                     $subfolder,
                     $destination);
 
-        # Next, create it:
-        if (! -e $destination) {
-            mkdir $destination
-                or confess "Unable to mkdir '$destination': $!";
+        # Next, create it.  Note that the subfolder may be
+        # $topfolder/X/Y/Z, not just $topfolder/X, so mkdir one level
+        # at a time:
+        my @path_elements = File::Spec->splitdir($subfolder);
+        my $makedir = $topfolder;
+        foreach my $pe (@path_elements) {
+            $makedir = File::Spec->catfile($makedir, $pe);
+            if (! -e $makedir) {
+                $log->trace("mkdir '$makedir'");
+                mkdir $makedir
+                    or confess "Unable to mkdir '$makedir': $!";
+            }
         }
-        # Sanity check:
+
+        # Final sanity check:
         $config->check_writeable_dir($destination);
         return $destination;
     }
@@ -697,7 +706,7 @@ class RIFEC::File {
 	while (!$done && $tries < $max) {
 	    if (link $tempfile, $dst) {
 		$done = $dst;
-		$log->debug("'%s' created OK", $dst);
+		$log->debug("'%s' created OK (linked from '%s')", $dst, $tempfile);
 	    }
 	    else {
 		my $prev_dst = $dst;
