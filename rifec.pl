@@ -524,6 +524,7 @@ class RIFEC::File {
     use File::Spec;
     use File::Temp qw();
     use Digest::MD5 qw();
+    use IO::File;
     use POSIX qw();
     use Data::Dumper;
     use Carp qw(confess);
@@ -564,49 +565,69 @@ class RIFEC::File {
         return pack("S", ~$val);
     }
 
-    method _calculate_integritydigest(ScalarRef $blockref) {
-	$log->debug("Calculating integrity digest...");
+    # Calculating this while receiving the file, ie. in
+    # Handler::read_socket, would be much faster.  However, by doing
+    # it afterwards we get a sanity check that read_part/read_socket
+    # didn't mess up our data in transit.  Belt and braces.
+    method _calculate_integritydigest() {
+        my $file = $self->_tarfile;
+	$log->debug("Calculating integrity digest of '%s'", $file);
+
+        my $blocksize = 512;
 
 	# Make sure it is 512-block aligned (it should be)
-	confess "Content block not 512-byte aligned!"
-	    if length($$blockref) % 512;
+        my $length = (stat($file))[7];
+	confess "Tar file not 512-byte aligned!"
+	    if $length % $blocksize;
 
 	my $md5 = Digest::MD5->new();
+	my $fh = IO::File->new($file, O_RDONLY)
+	    or confess "Unable to open '$file': $!";
 
 	my $i = 0;
-	while ($i < length($$blockref)) {
-	    $md5->add(
-		$self->_calculate_tcp_checksum( substr($$blockref, $i, 512) ));
-	    $i += 512;
-	}
-	$md5->add(pack("H*", $config->uploadkey($self->session()->card())));
+	while ($i < $length) {
+            my $block;
+	    my $read_status = $fh->read($block, $blocksize);
 
+            confess "Error while reading from '$file': $!"
+                unless defined $read_status;
+
+            confess "Reached EOF while reading from '$file'"
+                if $read_status == 0;
+
+            confess "Unexpected read length [$read_status] from '$file'"
+                unless $read_status == $blocksize;
+
+	    $md5->add( $self->_calculate_tcp_checksum($block) );
+	    $i += $blocksize;
+	}
+
+	$fh->close()
+	    or confess "Unable to close '$file': $!";
+
+	$md5->add(pack("H*", $config->uploadkey($self->session->card)));
 	my $md5sum = $md5->hexdigest();
 
 	$log->debug("...done: %s", uc $md5sum);
-	return lc $md5sum;
+        $self->calculated_digest(uc $md5sum);
+	return uc $md5sum;
     }
 
-    method store_content(ScalarRef $contentref) {
+    method receiver_filehandle(Str $inner_filename) {
 	my $folder = $config->folder($self->session->card);
         $config->check_writeable_dir($folder);
 
-	# Calculate our integritydigest while the file contents are in
-	# transfer.  We can't check them yet, though, since the
-	# content is received before the integritydigest from the
-	# card.
-	$self->calculated_digest( $self->_calculate_integritydigest($contentref) );
-
 	my $tfh = File::Temp->new(
-	    TEMPLATE => sprintf(".rifec-transit-%d-XXXXXXXX", $$),
+	    TEMPLATE => sprintf(".rifec-receiving-%d--%s--XXXXXXXX",
+                                $$,
+                                $inner_filename),
 	    DIR      => $folder,
 	    UNLINK   => 0);
 	my $tfn = $tfh->filename;
 
-	print $tfh $$contentref;
-	$tfh->close() or confess "Unable to close '$tfn': $!";
 	$self->_tarfile($tfn); # Remember where we put it
-	$log->debug("Saved file '%s' ('%s')", $tfn, $self->tarfilename());
+	$log->debug("Receiver file: '%s' ('%s')", $tfn, $self->tarfilename());
+        return $tfh;
     }
 
     method check() {
@@ -627,6 +648,8 @@ class RIFEC::File {
 	}
 
 	# Then check the integrity digest field:
+        $self->_calculate_integritydigest();
+
 	if (lc($self->calculated_digest()) eq lc($self->integritydigest()))
 	{
 	    $log->debug("Integritydigest OK: [%s]", uc $self->integritydigest());
@@ -743,12 +766,12 @@ class RIFEC::File {
 	    unless $fn =~ $RIFEC::File::filename_regexp;
 
 	my $tfh = File::Temp->new(
-	    TEMPLATE => sprintf(".rifec-store-%d-XXXXXXXX", $$),
+	    TEMPLATE => sprintf(".rifec-untarred-%d--%s--XXXXXXXX", $$, $fn),
 	    DIR      => $config->folder( $self->session->card ),
 	    UNLINK   => 0);
 	my $tfn = $tfh->filename;
 
-	$log->debug("Writing data file '%s' to tempfile '%s'", $fn, $tfn);
+	$log->debug("Writing target file '%s' to tempfile '%s'", $fn, $tfn);
         # tar -xOf /tmp/movfile.tar DSC_1720.MOV > fnordmovie.mov
         my $extract_command = "$tar_cmd -xOf $tar_file $fn > $tfn";
         $log->trace("Extract command: '$extract_command'");
@@ -802,7 +825,7 @@ class RIFEC::File {
 	chmod 0666 & ~umask(), $self->_file
 	    or $log->warning("Unable to chmod '%s'", $self->file);
 
-	$log->info("File '%s' saved", $self->_file());
+	$log->info("File '%s' saved", $self->_file);
 	return 'ok';
     }
 }
@@ -815,6 +838,7 @@ class RIFEC::Handler {
     use HTTP::Status qw(:constants);
     use Params::Validate qw(validate);
     use Carp qw(confess);
+    use Socket qw();
 
     has 'session' => (isa => 'RIFEC::Session', is => 'rw', required => 0);
 
@@ -964,12 +988,10 @@ class RIFEC::Handler {
 	    });
     }
 
-    method init_file_object($part where { $_->isa('HTTP::Message') }) {
-	my $content = $part->content();
-
+    method init_file_object(Str $body) {
         my $soapbody;
         my $eval_result = eval {
-            $soapbody = XML::Simple::XMLin($content,
+            $soapbody = XML::Simple::XMLin($body,
                                            ForceArray => 0,
                                            KeyAttr    => []);
         };
@@ -993,7 +1015,135 @@ class RIFEC::Handler {
 	    'session'       => $self->session());
     }
 
-    method upload($request where { $_->isa('HTTP::Request') }) {
+    sub read_socket {
+        my ($self, $conn, $len) = @_;
+        confess "Wrong connection type object"
+            unless $conn->isa('HTTP::Daemon::ClientConn');
+
+        my $content = $conn->read_buffer('');
+        my $read_count = length($content);
+        my $blocksize = 1024;
+
+        my $fdset = '';
+        vec($fdset,fileno($conn),1) = 1;
+
+        while ($read_count < $len) {
+            $blocksize = $len - $read_count
+                if $blocksize > ($len - $read_count);
+
+            my $into;
+
+            my $n = select($fdset, undef, undef, $config->sockettimeout);
+            confess "select() timed out waiting for socket"
+                if $n == 0;
+            confess "select() returned error: $!"
+                if $n < 0;
+
+            my $s = sysread($conn, $into, $blocksize);
+            confess "Read failed!"
+                unless defined $s;
+            confess "Reached EOF!"
+                if $s == 0;
+
+            $content    .= $into;
+            $read_count += length $into;
+        }
+
+        if ($read_count > $len) {
+            my $tail = substr $content, $len;
+            $content = substr $content, 0, $len;
+            $conn->read_buffer($tail);
+        }
+        return $content;
+    }
+
+    sub stow_away {
+        my ($self, $buffer, $keep, $to) = @_;
+
+        my $stow;
+        my $giveback;
+
+        if ($keep == 0) {
+            $stow = $buffer;
+            $giveback = '';
+        }
+        else {
+            $stow = substr $buffer, 0, -$keep;
+            $giveback = substr $buffer, -$keep;
+        }
+
+        if (ref($to) eq 'SCALAR') {
+            $$to .= $stow;
+        }
+        elsif (ref($to) eq 'File::Temp') {
+            print $to $stow;
+        }
+        else {
+            confess "Need a better place to stow!";
+        }
+        return $giveback;
+    }
+
+    method read_part($conn where { $_->isa('HTTP::Daemon::ClientConn') },
+                     Str $boundary,
+                     Num $maxlen,
+                     $to_file?) {
+
+        my $default_bs = 1024;
+        my $overlap = length($boundary) + 8; # \r\n*2 + --*2 = 8
+        my $out_var;
+        my $to = $to_file || \$out_var;
+
+        my $header = '';
+        my $buf    = '';
+        my $read_len = 0;
+
+      READ:
+        while ($read_len < $maxlen) {
+            my $left = $maxlen - $read_len;
+            my $readblock = $left < $default_bs ? $left : $default_bs;
+
+            my $add = $self->read_socket($conn, $readblock);
+
+            $buf      .= $add;
+            $read_len += length($add);
+
+            # Are we done?
+            if ($buf =~ /\A (.*?) (\r?\n)? -- \Q$boundary\E (--)? \r?\n (.*) \z/msxi) {
+                my ($keep, $tail) = ($1, $4);
+
+                # The tail needs to go back to the front of the read buffer:
+                $conn->read_buffer($tail . $conn->read_buffer(''));
+                $read_len -= length($tail);
+
+                # If the body is empty or small enough to match on the
+                # first round, we need to chop off the header:
+                if (!$header &&
+                    $keep =~ s/\A (.*?) \r?\n \r?\n//msxi) {
+                    $header = $1;
+                }
+
+                $self->stow_away($keep, 0, $to);
+                last READ;
+            }
+            elsif (!$header &&
+                   $buf =~ s/\A (.*?) \r?\n \r?\n//msxi)
+            {
+                $header = $1;
+            }
+            # Don't start stowing away stuff until we have found the
+            # header separator
+            if ($header)
+            {
+                $buf = $self->stow_away($buf, $overlap, $to);
+            }
+        }
+        return $header, $out_var, $maxlen-$read_len;
+    }
+
+    method upload($conn    where { $_->isa('HTTP::Daemon::ClientConn') },
+                  $request where { $_->isa('HTTP::Request') }) {
+
 	$log->info("Upload from '%s' (%s)",
 		   $config->cardname($self->session->card),
 		   $self->session->card);
@@ -1001,42 +1151,58 @@ class RIFEC::Handler {
 	confess "Session un-authenticated, upload is a no-go"
 	    unless $self->session->authenticated;
 
-	my $file;
+        my $left = $request->header('Content-Length');
+        my $boundary;
+        if ($request->header('Content-Type') =~
+            m|\A multipart/form-data; \s* boundary=([^\s;,]+) [,;]? \s* \z|xi) {
+            # This is not very general or robust MIME parsing - but
+            # then again, we are not a general SOAP server.
+            $boundary = $1;
+        }
+        else {
+            confess sprintf("Unrecognized Content-Type header '%s'",
+                            $request->header('Content-Type'));
+        }
 
-	my @expected_parts = ('SOAPENVELOPE', 'FILENAME', 'INTEGRITYDIGEST');
-	foreach my $part ($request->parts)
-	{
-	    my ($partname) = $part->headers_as_string() =~ /name="(.*?)"/x;
-	    confess "Unable to extract name from part header" unless $partname;
+        my ($phead, $pbody);
+        # Swallow everything up to and including the starting
+        # delimiter:
+        (undef, undef, $left) = $self->read_part($conn, $boundary, $left);
 
-	    # We want those three parts in that particular order
-	    my $expect_partname = shift @expected_parts;
-	    confess sprintf("Expected part '%s', got '%s'", $expect_partname, $partname)
-		unless $partname eq $expect_partname;
+        # Process the SOAPENVELOPE part:
+        $log->trace("Upload: Processing SOAPENVELOPE part");
+        ($phead, $pbody, $left) = $self->read_part($conn, $boundary, $left);
 
-	    if ($partname eq 'SOAPENVELOPE')
-	    {
-                $log->trace("Upload: Processing SOAPENVELOPE part");
-		# The RIFEC::File object is initialized from the values
-		# in the SOAP envelope:
-		$file = $self->init_file_object($part);
-	    }
-	    elsif ($partname eq 'FILENAME')
-	    {
-                $log->trace("Upload: Processing FILENAME part");
-		# Sanity checking:
-		my ($fn) = $part->headers_as_string() =~ /filename="(.*?)"/x;
-		confess "Unable to extract filename from part header" unless $fn;
-		confess "File name differs from RIFEC::File state"
-		    unless $fn eq $file->tarfilename();
-		$file->store_content($part->content_ref);
-	    }
-	    elsif ($partname eq 'INTEGRITYDIGEST')
-	    {
-                $log->trace("Upload: Processing INTEGRITYDIGEST part");
-		$file->integritydigest($part->content);
-	    }
-	}
+        confess "Unable to verify start of SOAPENVELOPE part"
+            unless $phead =~ / name="SOAPENVELOPE"/;
+
+        my $file = $self->init_file_object($pbody);
+
+        # Process the FILENAME part, ie. the file itself:
+        $log->trace("Upload: Processing FILENAME part");
+        my $recv_fh = $file->receiver_filehandle($file->tarfilename());
+
+        ($phead, undef, $left) = $self->read_part($conn, $boundary, $left, $recv_fh);
+	$recv_fh->close()
+            or confess "Unable to close receiver FH: $!";
+
+        confess "Unable to verify start of FILENAME part"
+            unless $phead =~ / name="FILENAME"/;
+
+        confess "Unable to extract filename from part header"
+            unless my ($fn) = $phead =~ /filename="(.*?)"/x;
+
+        confess "File name differs from RIFEC::File state"
+            unless $fn eq $file->tarfilename();
+
+        # Last comes the INTEGRITYDIGEST part:
+        $log->trace("Upload: Processing INTEGRITYDIGEST part");
+        ($phead, $pbody, $left) = $self->read_part($conn, $boundary, $left);
+
+        confess "Unable to verify start of INTEGRITYDIGEST part"
+            unless $phead =~ / name="INTEGRITYDIGEST"/;
+
+        $file->integritydigest($pbody);
 
         # Should we crash if $file->check() fails?  I am thinking not:
         # We log a warning and tell the card whether the operation
@@ -1074,14 +1240,15 @@ class RIFEC::Handler {
 	$header->content_type         ('text/xml');
 	$header->content_type_charset ('UTF-8');
 	$header->content_length       (length($raw));
-	$header->server               ('rifec.pl v0.7');
+	$header->server               ('rifec.pl v0.8');
 	$header->date                 (time);
 	$header->header               ('pragma' => 'no-cache');
 
 	return HTTP::Response->new($status, $message, $header, $raw);
     }
 
-    method dispatch($request where { $_->isa('HTTP::Request') }) {
+    method dispatch($request where { $_->isa('HTTP::Request') },
+                    $conn where { $_->isa('HTTP::Daemon::ClientConn') }) {
 	my $reply;
 	my %handlerof = ('"urn:StartSession"'        => \&startsession,
 			 '"urn:GetPhotoStatus"'      => \&getphotostatus,
@@ -1094,9 +1261,13 @@ class RIFEC::Handler {
 		$request->uri->path eq "/api/soap/eyefilm/v1")
             {
 		my $action = $request->header('SOAPAction');
+                my $length = $request->header('Content-Length');
+
+                my $content = $self->read_socket($conn, $length);
+
                 my $body;
                 my $xml_eval_result = eval {
-                    $body = XML::Simple::XMLin($request->content(),
+                    $body = XML::Simple::XMLin($content,
                                                ForceArray => 0,
                                                KeyAttr    => []);
                 };
@@ -1114,7 +1285,7 @@ class RIFEC::Handler {
 	    elsif ($request->method eq 'POST' &&
 		   $request->uri->path eq "/api/soap/eyefilm/v1/upload")
 	    {
-		$answer = $self->upload($request);
+		$answer = $self->upload($conn, $request);
 	    }
 	    else {
 		confess sprintf("Unknown method/path combo: '%s' '%s'",
@@ -1167,14 +1338,17 @@ sub run_listener {
         if ($pid == 0) { # Child
             $conn->timeout($config->sockettimeout());
             my $handler = RIFEC::Handler->new();
-            while (my $req = $conn->get_request())
+
+            while (my $req = $conn->get_request(1))
             {
                 $log->debug("%s:%d -> %s %s",
                             $conn->peerhost(), $conn->peerport(),
                             $req->method, $req->uri->path);
-                #$log->trace("Request headers: " . $req->headers_as_string());
+                $log->trace("Request headers: " . $req->headers_as_string());
+
                 # All sanity checking is done in the handler
-                my $http_reply = $handler->dispatch($req);
+                my $http_reply = $handler->dispatch($req, $conn);
+
                 $conn->send_response($http_reply);
             }
             $log->debug("Closed connection!");
