@@ -34,7 +34,9 @@ my $log;
 my $config;
 
 # Config parsing and handling (accessed through the $config object)
-package RIFEC::Config {
+{
+    package RIFEC::Config;
+
     use Carp qw(confess);
     use Config::IniFiles;
     use Cwd qw();
@@ -408,7 +410,9 @@ package RIFEC::Config {
 }
 
 # Logging, accessed through the $log object:
-package RIFEC::Log {
+{
+    package RIFEC::Log;
+
     use Carp qw(confess);
     use Data::Dumper;
     use HTTP::Date qw();
@@ -530,7 +534,9 @@ package RIFEC::Log {
     1;
 }
 
-package RIFEC::Session {
+{
+    package RIFEC::Session;
+
     use Carp qw(confess);
     use Data::Dumper;
     use Digest::MD5 qw(md5_hex);
@@ -680,7 +686,9 @@ package RIFEC::Session {
     }
 }
 
-package RIFEC::File {
+{
+    package RIFEC::File;
+
     use Carp qw(confess);
     use Data::Dumper;
     use Digest::MD5 qw();
@@ -1077,12 +1085,14 @@ package RIFEC::File {
     1;
 }
 
-package RIFEC::Handler {
+{
+    package RIFEC::Handler;
+
     use Carp qw(confess);
     use Data::Dumper;
     use Encode qw();
     use HTTP::Message;
-    use HTTP::Status qw(:constants);
+    use HTTP::Status;
     use Params::Validate;
     use Socket qw();
     use XML::Simple qw(:strict);
@@ -1527,10 +1537,12 @@ package RIFEC::Handler {
 
 	my $header = HTTP::Headers->new();
 
-	$header->content_type         ('text/xml');
-	$header->content_type_charset ('UTF-8');
+	$header->content_type         ('text/xml; charset="utf-8"');
+        # The content_type_charset function is not present in the
+	# 5.8.6 installation on my Synology NAS:
+	#$header->content_type_charset ('UTF-8');
 	$header->content_length       (length($raw));
-	$header->server               ('rifec.pl v0.8');
+	$header->server               ('rifec.pl v0.9');
 	$header->date                 (time);
 	$header->header               ('pragma' => 'no-cache');
 
@@ -1587,7 +1599,7 @@ package RIFEC::Handler {
                                 $request->uri->path);
 	    }
 
-	    $reply = $self->_make_http_reply(HTTP_OK, "OK",
+	    $reply = $self->_make_http_reply(RC_OK, "OK",
 					     XML::Simple::XMLout($answer,
 								 KeepRoot => 1,
 								 XMLDecl  => 1,
@@ -1595,7 +1607,7 @@ package RIFEC::Handler {
 	};
         if (!defined $eval_result) {
 	    $log->warning("Died in request handling: " . $@);
-	    $reply = $self->_make_http_reply(HTTP_INTERNAL_SERVER_ERROR,
+	    $reply = $self->_make_http_reply(RC_INTERNAL_SERVER_ERROR,
 					     "Internal server error",
 					     "<title>My handler died :(</title>");
 	}
