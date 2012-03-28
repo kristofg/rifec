@@ -71,6 +71,9 @@ others are:
 
 * http://randomtechmakings.blogspot.com/2009/01/i-bought-eye-fi-sd-card-few-weeks-ago.html (Perl)
 
+* http://code.google.com/p/eyefiserver/ (Python - based on
+  https://github.com/tachang/EyeFiServer)
+
 The Eye-Fi forum thread at
 http://forums.eye.fi/viewtopic.php?f=4&t=270 contains some very useful
 information for everyone interested in running or making their own

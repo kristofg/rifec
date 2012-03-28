@@ -26,29 +26,35 @@ this program.
 Dependencies
 ============
 
-On Fedora 14 and 15, yum installing the following packages should be
-sufficient to run the script:
+In addition to the core modules normally distributed with Perl
+installations, these are the main dependencies of this script:
+
+/bin/tar (can be located elsewhere)
+Config::IniFiles
+HTTP::Daemon;
+Digest::MD5
+Params::Validate
+Proc::Daemon
+XML::Simple
+
+On Fedora, yum installing the following packages should be sufficient
+to run the script:
 
 tar
-perl-MooseX-Declare
 perl-Config-IniFiles
 perl-libwww-perl
 perl-MD5
-perl-IO-stringy
-perl-XML-Simple
-perl-Proc-Daemon
 perl-Params-Validate
+perl-Proc-Daemon
+perl-XML-Simple
 
 Un Ubuntu, apt-get installing the following packages should do the
 trick:
 
 tar
-libmoose-perl
-libmoosex-declare-perl
 libconfig-inifiles-perl
 libwww-perl
 libdigest-md5-perl
-libio-stringy-perl
-libxml-simple-perl
-libproc-daemon-perl
 libparams-validate-perl
+libproc-daemon-perl
+libxml-simple-perl

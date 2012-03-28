@@ -29,58 +29,92 @@
 
 use strict;
 use warnings;
-use MooseX::Declare;
 
 my $log;
 my $config;
 
 # Config parsing and handling (accessed through the $config object)
-class RIFEC::Config {
+package RIFEC::Config {
+    use Carp qw(confess);
     use Config::IniFiles;
     use Cwd qw();
     use Data::Dumper;
-    use Carp qw(confess);
+    use Params::Validate;
     use POSIX qw();
-    use Params::Validate qw(validate);
-
-    has 'file'     => (is  => 'rw');
-    has '_counter' => (isa => 'Int', is => 'rw', default => 0);
-
-    has '_cfg' => (isa     => 'HashRef',
-                   is      => 'ro',
-                   lazy    => 1,
-                   builder => '_build_config');
 
     our $card_section_re     = qr/\A card \s+ (.*?)\z/xi;
     our $filetype_section_re = qr/\A filetype \s+ (.*?)\z/xi;
     our $from_section_re     = qr/\A from \s+ (.*?) \s+ filetype \s+ (.*?)\z/xi;
 
-    method normalize_mac(Str $in) {
-	my $ret = $in;
-	$ret =~ s/[-: ]//gx;
+    sub new {
+        validate_pos(@_, 1, 0);
+        my ($class, $file) = @_;
 
+        my $self = {};
+        bless($self, $class);
+
+        $self->{'_file'}    = $file if @_ > 1;
+        $self->{'_cfg'}     = $self->_build_config();
+        $self->{'_counter'} = 0;
+
+        return $self;
+    }
+
+    sub _file {
+        validate_pos(@_, 1);
+        my ($self) = @_;
+        return $self->{'_file'};
+    }
+
+    sub _cfg {
+        validate_pos(@_, 1);
+        my ($self) = @_;
+        return $self->{'_cfg'};
+    }
+
+    sub counter {
+        validate_pos(@_, 1);
+        my ($self) = @_;
+	return $self->{'_counter'};
+    }
+
+    sub bump_counter {
+        validate_pos(@_, 1);
+        my ($self) = @_;
+        return ++$self->{'_counter'};
+    }
+
+    sub normalize_mac {
+        validate_pos(@_, 1, 1);
+        my ($self, $in) = @_;
+
+	my $ret = lc $in;
+	$ret =~ s/[-: ]//gx;
         confess "'$in' doesn't look like a MAC address"
             unless $ret =~ m|\A [a-z0-9]{12} \z|xi;
 
-	return lc $ret;
+	return $ret;
     }
 
-    method _read_inifile() {
+    sub _read_inifile {
+        validate_pos(@_, 1);
+        my ($self) = @_;
+
 	# Fall back to default if undef or empty:
-	$self->file("rifec.config") unless $self->file;
+	$self->{'file'} = "rifec.config" unless $self->_file;
 
 	# Absolute-ize, so that error messages output a full path:
-	$self->file( Cwd::abs_path($self->file) );
+	$self->{'file'} = Cwd::abs_path($self->_file);
 
-	confess sprintf("Config file '%s' does not exist", $self->file)
-	    unless -e $self->file;
-	confess sprintf("Config file '%s' is not readable", $self->file)
-	    unless -r $self->file;
-	confess sprintf("Config file '%s' is empty", $self->file)
-	    unless -s $self->file;
+	confess sprintf("Config file '%s' does not exist", $self->_file)
+	    unless -e $self->_file;
+	confess sprintf("Config file '%s' is not readable", $self->_file)
+	    unless -r $self->_file;
+	confess sprintf("Config file '%s' is empty", $self->_file)
+	    unless -s $self->_file;
 
         my %cfg;
-        tie(%cfg, 'Config::IniFiles', (-file       => $self->file,
+        tie(%cfg, 'Config::IniFiles', (-file       => $self->_file,
                                        -nocase     => 1,
                                        -allowempty => 0));
 	confess "Unable to read config file: ", Dumper(@Config::IniFiles::errors)
@@ -88,7 +122,10 @@ class RIFEC::Config {
 	return \%cfg;
     }
 
-    method _validate_inifile(HashRef $ini) {
+    sub _validate_inifile {
+        validate_pos(@_, 1, { type => Params::Validate::HASHREF });
+        my ($self, $ini) = @_;
+
         my %paramspec_of = (
             $card_section_re => {
                 'macaddress' => 1,
@@ -130,7 +167,10 @@ class RIFEC::Config {
         }
     }
 
-    method _build_config() {
+    sub _build_config {
+        validate_pos(@_, 1);
+        my ($self) = @_;
+
         my $filecfg = $self->_read_inifile();
         $self->_validate_inifile($filecfg);
         my $c = {};
@@ -192,9 +232,12 @@ class RIFEC::Config {
         return $c;
     }
 
-    method say_hello() {
+    sub say_hello {
+        validate_pos(@_, 1);
+        my ($self) = @_;
+
         $log->info("Config file '%s', %d card(s) configured:",
-                   Cwd::abs_path($self->file),
+                   Cwd::abs_path($self->_file),
                    scalar keys %{ $self->_cfg->{'cards'} });
 
         foreach my $card (keys %{ $self->_cfg->{'cards'} }) {
@@ -204,7 +247,10 @@ class RIFEC::Config {
         }
     }
 
-    method doiknow(Str $mac) {
+    sub doiknow {
+        validate_pos(@_, 1, 1);
+        my ($self, $mac) = @_;
+
         $mac = $self->normalize_mac($mac);
 
         confess sprintf("Sorry, I don't know the card with MAC '%s'", $mac)
@@ -213,7 +259,10 @@ class RIFEC::Config {
         return 1;
     }
 
-    method check_writeable_dir(Str $dir) {
+    sub check_writeable_dir {
+        validate_pos(@_, 1, 1);
+        my ($self, $dir) = @_;
+
 	confess sprintf("Destination directory '%s' not found", $dir)
 	    unless -e $dir;
 	confess sprintf("Destination directory '%s' not a directory", $dir)
@@ -223,23 +272,34 @@ class RIFEC::Config {
     }
 
     # Actual config accessors.
-    method logfile() {
+    sub logfile {
+        validate_pos(@_, 1);
+        my ($self) = @_;
         return $self->_cfg->{'main'}->{'logfile'};
     }
 
-    method loglevel() {
+    sub loglevel {
+        validate_pos(@_, 1);
+        my ($self) = @_;
         return $self->_cfg->{'main'}->{'loglevel'};
     }
 
-    method port() {
+    sub port {
+        validate_pos(@_, 1);
+        my ($self) = @_;
         return $self->_cfg->{'main'}->{'port'} || 59278;
     }
 
-    method sockettimeout() {
+    sub sockettimeout {
+        validate_pos(@_, 1);
+        my ($self) = @_;
         return $self->_cfg->{'main'}->{'sockettimeout'} || 600;
     }
 
-    method tarcommand() {
+    sub tarcommand {
+        validate_pos(@_, 1);
+        my ($self) = @_;
+
         my $tc = $self->_cfg->{'main'}->{'tarcommand'} || "/bin/tar";
 
         # Verify that the tar command looks sane:
@@ -252,12 +312,17 @@ class RIFEC::Config {
         return $tc;
     }
 
-    method subfoldertimesource() {
+    sub subfoldertimesource {
+        validate_pos(@_, 1);
+        my ($self) = @_;
         return $self->_cfg->{'main'}->{'subfoldertimesource'} || "local";
     }
 
     # Per-card settings:
-    method _mac_setting(Str $mac, Str $setting) {
+    sub _mac_setting {
+        validate_pos(@_, 1, 1, 1);
+        my ($self, $mac, $setting) = @_;
+
         $self->doiknow($mac);
         $mac = $self->normalize_mac($mac);
 
@@ -268,48 +333,60 @@ class RIFEC::Config {
         return $self->_cfg->{'macs'}->{$mac}->{$setting};
     }
 
-    method cardname(Str $mac) {
+    sub cardname {
+        validate_pos(@_, 1, 1);
+        my ($self, $mac) = @_;
         return $self->_mac_setting($mac, 'name');
     }
 
-    method uploadkey(Str $mac) {
+    sub uploadkey {
+        validate_pos(@_, 1, 1);
+        my ($self, $mac) = @_;
         return $self->_mac_setting($mac, 'uploadkey');
     }
 
-    method _foldersetting(Str $setting, Str $mac, Str $filename) {
+    sub _foldersetting {
+        validate_pos(@_, 1, 1, 1, 1);
+        my ($self, $setting, $mac, $filename) = @_;
+
         $self->doiknow($mac);
         $mac = $self->normalize_mac($mac);
+
+        my $cfg = $self->_cfg;
 
         if (defined($filename) && $filename) {
             $filename =~ / \. ([^ \.]*?) \z/xi
                 || confess "Unable to extract file type from name '$filename'";
             my $type = lc $1;
 
-            if (exists $self->_cfg->{'macs'}->{$mac}->{'filetypes'}->{$type} &&
-                exists $self->_cfg->{'macs'}->{$mac}->{'filetypes'}->{$type}->{$setting})
+            if (exists $cfg->{'macs'}->{$mac}->{'filetypes'}->{$type} &&
+                exists $cfg->{'macs'}->{$mac}->{'filetypes'}->{$type}->{$setting})
             {
-                return $self->_cfg->{'macs'}->{$mac}->{'filetypes'}->{$type}->{$setting};
+                return $cfg->{'macs'}->{$mac}->{'filetypes'}->{$type}->{$setting};
             }
 
-            if (exists $self->_cfg->{'filetypes'}->{$type} &&
-                exists $self->_cfg->{'filetypes'}->{$type}->{$setting})
+            if (exists $cfg->{'filetypes'}->{$type} &&
+                exists $cfg->{'filetypes'}->{$type}->{$setting})
             {
-                return $self->_cfg->{'filetypes'}->{$type}->{$setting};
+                return $cfg->{'filetypes'}->{$type}->{$setting};
             }
         }
 
-        if (exists $self->_cfg->{'macs'}->{$mac}->{$setting}) {
-            return $self->_cfg->{'macs'}->{$mac}->{$setting};
+        if (exists $cfg->{'macs'}->{$mac}->{$setting}) {
+            return $cfg->{'macs'}->{$mac}->{$setting};
         }
 
-        if (exists $self->_cfg->{'main'}->{$setting}) {
-            return $self->_cfg->{'main'}->{$setting}
+        if (exists $cfg->{'main'}->{$setting}) {
+            return $cfg->{'main'}->{$setting}
         }
 
         return;
     }
 
-    method folder(Str $mac, Str $filename?) {
+    sub folder {
+        validate_pos(@_, 1, 1, 0);
+        my ($self, $mac, $filename) = @_;
+
         my $f =  $self->_foldersetting('folder', $mac, $filename || '');
 
         confess sprintf("Error looking up folder for card '%s' file '%s'",
@@ -321,73 +398,94 @@ class RIFEC::Config {
         return $f;
     }
 
-    method subfolder(Str $mac, Str $filename?) {
+    sub subfolder {
+        validate_pos(@_, 1, 1, 0);
+        my ($self, $mac, $filename) = @_;
         return $self->_foldersetting('subfolder', $mac, $filename || '');
     }
 
-    #
-    method counter() {
-	return $self->_counter();
-    }
-
-    method bump_counter() {
-	return $self->_counter( $self->_counter() + 1 );
-    }
+    1;
 }
 
 # Logging, accessed through the $log object:
-class RIFEC::Log {
+package RIFEC::Log {
+    use Carp qw(confess);
     use Data::Dumper;
     use HTTP::Date qw();
     use IO::File;
-    use Carp qw(confess);
+    use Params::Validate;
 
-    has '_fh' => (is      => 'rw',
-		  default => sub { \*STDOUT });
+    sub new {
+        validate_pos(@_, 1, 0);
+        my ($class, $file) = @_;
 
-    # Short for LogLevel.  I get tired of typing.
-    has '_ll' => (isa => 'HashRef[Str]',
-		  is  => 'ro',
-		  default => sub { {
-		      'off'     => 100,
-		      'warning' => 4,
-		      'info'    => 3,
-		      'debug'   => 2,
-		      'trace'   => 1,
-		      }});
+        my $self = {};
+        bless($self, $class);
 
-    method BUILD(HashRef $args) {
-	$self->open();
+        $self->{'_fh'} = \*STDOUT;
+        $self->open();
+
+        return $self;
     }
 
-    method DEMOLISH() {
+    sub _fh {
+        validate_pos(@_, 1);
+        my ($self) = @_;
+        return $self->{'_fh'};
+    }
+
+    sub DESTROY {
+        my ($self) = @_;
+
 	$self->_fh->close()
 	    or confess "Unable to close logfile while exiting: $!";
     }
 
-    method open() {
+    sub loglevel {
+        return {
+            'off'     => 100,
+            'warning' => 4,
+            'info'    => 3,
+            'debug'   => 2,
+            'trace'   => 1,
+        };
+    };
+
+    sub open {
+        validate_pos(@_, 1);
+        my ($self) = @_;
+
 	if (my $lf = $config->logfile()) {
+            $self->_fh->close()
+                or confess "Unable to close logfile while exiting: $!";
+
 	    my $fh = IO::File->new($lf, O_WRONLY|O_APPEND|O_CREAT)
 		or confess "Unable to open logfile '$lf' for writing: $!";
-	    $self->_fh($fh);
+	    $self->{'_fh'} = $fh;
 	}
     }
 
-    method _get_preamble(Str $ll) {
+    sub _get_preamble {
+        validate_pos(@_, 1, 1);
+        my ($self, $ll) = @_;
+
 	return sprintf("%s %7u %7s ",
 		       HTTP::Date::time2isoz(),
 		       $$,
 		       uc $ll);
     }
 
-    method _print_if(Str $loglevel, Str @str) {
+    sub _print_if {
+        validate_pos(@_, 1, 1, (0) x (@_ - 2));
+        my ($self, $loglevel, @str) = @_;
+
 	# Sanity check.
 	foreach my $ll ($loglevel, $config->loglevel) {
 	    confess sprintf("Invalid loglevel '%s'", $ll)
-		unless $self->_ll->{lc $ll};
+		unless $self->loglevel->{lc $ll};
 	}
 
-	if ($self->_ll->{lc $loglevel} >= $self->_ll->{lc $config->loglevel})
+	if ($self->loglevel->{lc $loglevel} >= $self->loglevel->{lc $config->loglevel})
 	{
 	    my $out = $self->_get_preamble($loglevel);
 
@@ -409,44 +507,103 @@ class RIFEC::Log {
 	}
     }
 
-    method trace(Str @str) {
+    sub trace {
+        my ($self, @str) = @_;
 	$self->_print_if('trace', @str);
     }
 
-    method debug(Str @str) {
+    sub debug {
+        my ($self, @str) = @_;
 	$self->_print_if('debug', @str);
     }
 
-    method info(Str @str) {
+    sub info {
+        my ($self, @str) = @_;
 	$self->_print_if('info', @str);
     }
 
-    method warning(Str @str) {
+    sub warning {
+        my ($self, @str) = @_;
 	$self->_print_if('warning', @str);
     }
+
+    1;
 }
 
-class RIFEC::Session {
+package RIFEC::Session {
+    use Carp qw(confess);
+    use Data::Dumper;
     use Digest::MD5 qw(md5_hex);
     use IO::File;
-    use Data::Dumper;
-    use Carp qw(confess);
+    use Params::Validate;
 
-    # new() params - things we must know right away:
-    has 'card'                  => (isa => 'Str', is => 'rw', required => 1);
-    has 'transfermode'          => (isa => 'Str', is => 'rw', required => 1);
-    has 'transfermodetimestamp' => (isa => 'Str', is => 'rw', required => 1);
-    has 'card_nonce'            => (isa => 'Str', is => 'rw', required => 1);
+    sub new {
+        my $class = shift;
+        my %p = validate(@_, { 'card'                  => 1,
+                               'transfermode'          => 1,
+                               'transfermodetimestamp' => 1,
+                               'card_nonce'            => 1, });
 
-    # things we learn or figure out after construction:
-    has 'server_nonce'  => (isa => 'Str', is => 'ro', builder => '_s_nonce');
-    has 'authenticated' => (isa => 'Bool', is => 'rw', default => 0);
+        my $self = {};
+        bless($self, $class);
+
+        foreach my $key (keys %p) {
+            $self->{$key} = $p{$key};
+        }
+        $self->{'server_nonce'} = $self->_generate_s_nonce();
+        $self->{'is_authenticated'} = undef;
+
+        $self->_check_params();
+
+        return $self;
+    }
+
+    sub card {
+        validate_pos(@_, 1);
+        my ($self) = @_;
+        return $self->{'card'};
+    }
+
+    sub transfermode {
+        validate_pos(@_, 1);
+        my ($self) = @_;
+        return $self->{'transfermode'};
+    }
+
+    sub transfermodetimestamp {
+        validate_pos(@_, 1);
+        my ($self) = @_;
+        return $self->{'transfermodetimestamp'};
+    }
+
+    sub card_nonce {
+        validate_pos(@_, 1);
+        my ($self) = @_;
+        return $self->{'card_nonce'};
+    }
+
+    sub server_nonce {
+        validate_pos(@_, 1);
+        my ($self) = @_;
+        return $self->{'server_nonce'};
+    }
+
+    sub authenticated {
+        validate_pos(@_, 1, 0);
+        my ($self, $set) = @_;
+
+        $self->{'is_authenticated'} = $set if @_ > 1;
+        return $self->{'is_authenticated'};
+    }
 
     # We used to use the Crypt::Random library for this, but it is not
     # available through the package manager of all Linux
     # distributions, and was just a wrapper around reading the data
     # from /dev/urandom anyway.
-    method getrandom(Int $bytes) {
+    sub getrandom {
+        validate_pos(@_, 1, 1);
+        my ($self, $bytes) = @_;
+
 	my $random_file = "/dev/urandom";
 	my $output;
 	my $has_read = 0;
@@ -473,16 +630,17 @@ class RIFEC::Session {
 	return $output;
     }
 
-    method _s_nonce() {
+    sub _generate_s_nonce {
+        my ($self) = @_;
 	my $octets = $self->getrandom(16);
 	return unpack("H*", $octets);
     }
 
-    # This one mainly consists of sanity checks of the card and
-    # session params
-    method BUILD(HashRef $args) {
+    sub _check_params {
+        my ($self) = @_;
+
 	# Only accept cards that have a config section
-	$config->doiknow($args->{'card'});
+	$config->doiknow($self->card);
 
 	# Only accept transfer modes that we recognize.  My card sends
 	# 546 (0x222), and from basic testing twiddling switches in
@@ -498,49 +656,39 @@ class RIFEC::Session {
 	# haven't won't.
 	my $known_txmodes = 1<<1 | 1<<5 | 1<<9;
 
-	if ($args->{'transfermode'} & ~$known_txmodes) {
+	if ($self->transfermode & ~$known_txmodes) {
 	    confess sprintf("Unsupported transfermode '%s' from card '%s' (%s)," .
                             " See TROUBLESHOOTING.txt for info about what this means",
-                            $args->{'transfermode'},
-                            $config->cardname($args->{'card'}),
-                            $args->{'card'});
+                            $self->transfermode,
+                            $config->cardname($self->card),
+                            $self->card);
 	}
     }
 
-    method server_credential() {
-	return md5_hex(pack("H*", $self->card()),
-		       pack("H*", $self->card_nonce()),
-		       pack("H*", $config->uploadkey($self->card())));
+    sub server_credential {
+        my ($self) = @_;
+	return md5_hex(pack("H*", $self->card),
+		       pack("H*", $self->card_nonce),
+		       pack("H*", $config->uploadkey($self->card)));
     }
 
-    method card_credential() {
-	return md5_hex(pack("H*", $self->card()),
-		       pack("H*", $config->uploadkey($self->card())),
-		       pack("H*", $self->server_nonce()));
+    sub card_credential {
+        my ($self) = @_;
+	return md5_hex(pack("H*", $self->card),
+		       pack("H*", $config->uploadkey($self->card)),
+		       pack("H*", $self->server_nonce));
     }
 }
 
-class RIFEC::File {
+package RIFEC::File {
+    use Carp qw(confess);
+    use Data::Dumper;
+    use Digest::MD5 qw();
     use File::Spec;
     use File::Temp qw();
-    use Digest::MD5 qw();
     use IO::File;
+    use Params::Validate;
     use POSIX qw();
-    use Data::Dumper;
-    use Carp qw(confess);
-
-    has 'session'       => (isa => 'RIFEC::Session', is => 'ro', required => 1);
-
-    has 'tarfilename'   => (isa => 'Str', is => 'ro', required => 1);
-    has 'size'          => (isa => 'Int', is => 'ro', required => 1);
-    has 'encryption'    => (isa => 'Str', is => 'ro', required => 0);
-    has 'filesignature' => (isa => 'Str', is => 'ro', required => 1);
-
-    has 'integritydigest'   => (isa => 'Str', is => 'rw', required => 0);
-    has 'calculated_digest' => (isa => 'Str', is => 'rw', required => 0);
-
-    has '_tarfile' => (isa => 'Str', is => 'rw');
-    has '_file'    => (isa => 'Str', is => 'rw');
 
     # If your camera produces files containing other characters than I
     # have thought of here, you may have to change this regexp.  (All
@@ -548,11 +696,88 @@ class RIFEC::File {
     # sufficient to update this one place).
     our $filename_regexp = qr|\A [ a-z0-9._-]* \z|xi;
 
+    sub new {
+        my $class = shift;
+        my %p = validate(@_, { 'session'       => { isa => 'RIFEC::Session' },
+                               'tarfilename'   => 1,
+                               'size'          => 1,
+                               'encryption'    => 0,
+                               'filesignature' => 1, });
+
+        my $self = {};
+        bless($self, $class);
+
+        foreach my $key (keys %p) {
+            $self->{$key} = $p{$key};
+        }
+        return $self;
+    }
+
+    # RO parameters:
+    sub session {
+        validate_pos(@_, 1);
+        my ($self) = @_;
+        return $self->{'session'};
+    }
+
+    sub tarfilename {
+        validate_pos(@_, 1);
+        my ($self) = @_;
+        return $self->{'tarfilename'};
+    }
+
+    sub size {
+        validate_pos(@_, 1);
+        my ($self) = @_;
+        return $self->{'size'};
+    }
+
+    sub encryption {
+        validate_pos(@_, 1);
+        my ($self) = @_;
+        return $self->{'encryption'};
+    }
+
+    sub filesignature {
+        validate_pos(@_, 1);
+        my ($self) = @_;
+        return $self->{'filesignature'};
+    }
+
+    # RW parameters:
+    sub integritydigest {
+        validate_pos(@_, 1, 0);
+        my ($self, $set) = @_;
+
+        $self->{'integritydigest'} = $set if @_ > 1;
+        return $self->{'integritydigest'};
+    }
+
+    sub calculated_digest {
+        validate_pos(@_, 1, 0);
+        my ($self, $set) = @_;
+
+        $self->{'calculated_digest'} = $set if @_ > 1;
+        return $self->{'calculated_digest'};
+    }
+
+    sub tarfile {
+        validate_pos(@_, 1, 0);
+        my ($self, $set) = @_;
+
+        $self->{'tarfile'} = $set if @_ > 1;
+        return $self->{'tarfile'};
+    }
+
+    sub stored_file {
+        validate_pos(@_, 1, 0);
+        my ($self, $set) = @_;
+
+        $self->{'stored_file'} = $set if @_ > 1;
+        return $self->{'stored_file'};
+    }
+
     # See http://forums.eye.fi/viewtopic.php?f=4&t=270#p3874
-    #
-    # This is an old-fashioned sub, not a method, because of execution
-    # speed.  When calling this for every 512 bytes in a 20MB file,
-    # the overhead is noticeable.
     sub _calculate_tcp_checksum {
 	my ($self, $block) = @_;
 	my $val = 0;
@@ -569,8 +794,10 @@ class RIFEC::File {
     # Handler::read_socket, would be much faster.  However, by doing
     # it afterwards we get a sanity check that read_part/read_socket
     # didn't mess up our data in transit.  Belt and braces.
-    method _calculate_integritydigest() {
-        my $file = $self->_tarfile;
+    sub _calculate_integritydigest {
+        my ($self) = @_;
+
+        my $file = $self->tarfile;
 	$log->debug("Calculating integrity digest of '%s'", $file);
 
         my $blocksize = 512;
@@ -613,7 +840,10 @@ class RIFEC::File {
 	return uc $md5sum;
     }
 
-    method receiver_filehandle(Str $inner_filename) {
+    sub receiver_filehandle {
+        validate_pos(@_, 1, 1);
+        my ($self, $inner_filename) = @_;
+
 	my $folder = $config->folder($self->session->card);
         $config->check_writeable_dir($folder);
 
@@ -625,23 +855,26 @@ class RIFEC::File {
 	    UNLINK   => 0);
 	my $tfn = $tfh->filename;
 
-	$self->_tarfile($tfn); # Remember where we put it
-	$log->debug("Receiver file: '%s' ('%s')", $tfn, $self->tarfilename());
+	$self->tarfile($tfn); # Remember where we put it
+	$log->debug("Receiver file: '%s' ('%s')", $tfn, $self->tarfilename);
         return $tfh;
     }
 
-    method check() {
+    sub check {
+        validate_pos(@_, 1);
+        my ($self) = @_;
+
 	# First that the size matches what the card said:
-	my $stat_size = (stat($self->_tarfile))[7];
+	my $stat_size = (stat($self->tarfile))[7];
 	if ($stat_size == $self->size)
 	{
 	    $log->debug("File '%s' is %d bytes long, as expected",
-			$self->_tarfile,
+			$self->tarfile,
 			$self->size);
 	}
 	else {
 	    $log->warning("File '%s' is %d bytes long, should have been %d",
-                          $self->_tarfile,
+                          $self->tarfile,
                           $stat_size,
                           $self->size);
 	    return;
@@ -650,7 +883,7 @@ class RIFEC::File {
 	# Then check the integrity digest field:
         $self->_calculate_integritydigest();
 
-	if (lc($self->calculated_digest()) eq lc($self->integritydigest()))
+	if (uc($self->calculated_digest()) eq uc($self->integritydigest()))
 	{
 	    $log->debug("Integritydigest OK: [%s]", uc $self->integritydigest());
 	}
@@ -664,7 +897,10 @@ class RIFEC::File {
 	return 1;
     }
 
-    method _subfolder(Str $tmpimage, Str $imagefilename) {
+    sub _subfolder {
+        validate_pos(@_, 1, 1, 1);
+        my ($self, $tmpimage, $imagefilename) = @_;
+
         my $card = $self->session->card;
 
         my $topfolder = $config->folder($card, $imagefilename);
@@ -720,7 +956,10 @@ class RIFEC::File {
     #
     # (We *assume* that if the link() fails, it is because the
     # filename already exists.)
-    method _link_file(Str $tempfile, Str $destination_name) {
+    sub _link_file {
+        validate_pos(@_, 1, 1, 1);
+        my ($self, $tempfile, $destination_name) = @_;
+
 	my $tries = 0;
 	my $max   = 100;
 	my $dst   = $destination_name;
@@ -745,9 +984,12 @@ class RIFEC::File {
 	return $dst;
     }
 
-    method _extract_tarfile() {
+    sub _extract_tarfile {
+        validate_pos(@_, 1);
+        my ($self) = @_;
+
         my $tar_cmd  = $config->tarcommand;
-        my $tar_file = $self->_tarfile;
+        my $tar_file = $self->tarfile;
 
         my @files = `$tar_cmd -tf $tar_file`;
         # Remove leading and trailing whitespace from each element:
@@ -794,7 +1036,10 @@ class RIFEC::File {
 	return ($fn, $tfn);
     }
 
-    method extract() {
+    sub extract {
+        validate_pos(@_, 1);
+        my ($self) = @_;
+
 	# Extract the tar file and save the contents to a temp file:
 	my ($filename, $tmpfilename) = $self->_extract_tarfile();
 
@@ -810,42 +1055,62 @@ class RIFEC::File {
                       $full_filename, $outfile)
 	    unless $outfile eq $full_filename;
 
-	$self->_file($outfile); # Remember where we put it
+	$self->stored_file($outfile); # Remember where we put it
 
-	$log->debug("Removing tar file '%s'", $self->_tarfile());
-        unlink $self->_tarfile
+	$log->debug("Removing tar file '%s'", $self->tarfile());
+        unlink $self->tarfile
             or confess sprintf("Unable to unlink tarfile '%s': $!",
-                               $self->_tarfile);
+                               $self->tarfile);
 
 	$log->debug("Removing temp file '%s'", $tmpfilename);
         unlink $tmpfilename
             or confess "Unable to unlink tempfile '$tmpfilename': $!";
 
 	# Chmod it to use the default umask
-	chmod 0666 & ~umask(), $self->_file
+	chmod 0666 & ~umask(), $self->stored_file
 	    or $log->warning("Unable to chmod '%s'", $self->file);
 
-	$log->info("File '%s' saved", $self->_file);
+	$log->info("File '%s' saved", $self->stored_file);
 	return 'ok';
     }
+
+    1;
 }
 
-class RIFEC::Handler {
+package RIFEC::Handler {
+    use Carp qw(confess);
     use Data::Dumper;
-    use XML::Simple qw(:strict);
     use Encode qw();
     use HTTP::Message;
     use HTTP::Status qw(:constants);
-    use Params::Validate qw(validate);
-    use Carp qw(confess);
+    use Params::Validate;
     use Socket qw();
+    use XML::Simple qw(:strict);
 
-    has 'session' => (isa => 'RIFEC::Session', is => 'rw', required => 0);
+    sub new {
+        my $class = shift;
+
+        my $self = {};
+        bless($self, $class);
+
+        return $self;
+    }
+
+    sub session {
+        validate_pos(@_, 1, { optional => 1, isa => 'RIFEC::Session' });
+        my ($self, $set) = @_;
+
+        $self->{'session'} = $set if @_ > 1;
+        return $self->{'session'};
+    }
 
     # We jump through some hoops to make XML::Simple output the SOAP
     # response the way we want it instead of having to template-write
     # the XML ourselves.  Most of those hoops are hidden here:
-    method _wrap_response(Str $blockname, HashRef $values) {
+    sub _wrap_response {
+        validate_pos(@_, 1, 1, 1);
+        my ($self, $blockname, $values) = @_;
+
 	$log->trace($blockname . ": " . Dumper($values));
 
 	# { a => b, c => d } --> { a => [ b ], c => [ d ] }
@@ -871,7 +1136,10 @@ class RIFEC::Handler {
     # Do basic sanity checking of the parameters coming in.
     # XML::Simple will fail on XML syntax, this sub does some reality
     # checking on the contents.
-    method _extract_params(HashRef $body, Str $bodyname) {
+    sub _extract_params {
+        validate_pos(@_, 1, { type => Params::Validate::HASHREF }, 1);
+        my ($self, $body, $bodyname) = @_;
+
         # The filename regexp lives in the ::File class since it is
         # used in other places as well
         my $md5sum       = qr|\A [a-z0-9]{32} \z|xi;
@@ -914,18 +1182,24 @@ class RIFEC::Handler {
             },
         );
 
-        # MooseX::Declare has checked that $body is a HashRef already,
-        # so we can go straight on the keys inside it:
+        # Params::Validate has checked that $body is a HashRef
+        # already, so we can go straight on the keys inside it:
         confess "No element '$bodyname' in body"
             unless exists $body->{$bodyname} && defined $body->{$bodyname};
         confess "Element '$bodyname' is not a hash ref"
             unless ref($body->{$bodyname}) eq 'HASH';
 
         Params::Validate::validation_options('stack_skip' => 2);
-        validate( @{[ $body->{$bodyname} ]}, $paramspec_of{$bodyname} );
+        my %p = validate( @{[ $body->{$bodyname} ]}, $paramspec_of{$bodyname} );
+        Params::Validate::validation_options('stack_skip' => 1);
+
+        return \%p;
     }
 
-    method startsession(HashRef $soapbody) {
+    sub startsession {
+        validate_pos(@_, 1, { type => Params::Validate::HASHREF });
+        my ($self, $soapbody) = @_;
+
 	my $params = $self->_extract_params($soapbody, "ns1:StartSession");
 
 	$log->info("StartSession from '%s' (%s)",
@@ -952,7 +1226,10 @@ class RIFEC::Handler {
 	    });
     }
 
-    method getphotostatus(HashRef $soapbody) {
+    sub getphotostatus {
+        validate_pos(@_, 1, { type => Params::Validate::HASHREF });
+        my ($self, $soapbody) = @_;
+
 	my $params = $self->_extract_params($soapbody, "ns1:GetPhotoStatus");
 
 	$log->info("GetPhotoStatus for '%s' from '%s' (%s)",
@@ -983,12 +1260,15 @@ class RIFEC::Handler {
 	return $self->_wrap_response(
 	    'GetPhotoStatusResponse',
 	    {
-		'fileid' => $config->counter(),
+		'fileid' => $config->counter,
 		'offset' => '0',
 	    });
     }
 
-    method init_file_object(Str $body) {
+    sub init_file_object {
+        validate_pos(@_, 1, 1);
+        my ($self, $body) = @_;
+
         my $soapbody;
         my $eval_result = eval {
             $soapbody = XML::Simple::XMLin($body,
@@ -1084,10 +1364,11 @@ class RIFEC::Handler {
         return $giveback;
     }
 
-    method read_part($conn where { $_->isa('HTTP::Daemon::ClientConn') },
-                     Str $boundary,
-                     Num $maxlen,
-                     $to_file?) {
+    sub read_part {
+        validate_pos(@_, 1,
+                     { isa => 'HTTP::Daemon::ClientConn' },
+                     1, 1, 0);
+        my ($self, $conn, $boundary, $maxlen, $to_file) = @_;
 
         my $default_bs = 1024;
         my $overlap = length($boundary) + 8; # \r\n*2 + --*2 = 8
@@ -1141,8 +1422,11 @@ class RIFEC::Handler {
         return $header, $out_var, $maxlen-$read_len;
     }
 
-    method upload($conn    where { $_->isa('HTTP::Daemon::ClientConn') },
-                  $request where { $_->isa('HTTP::Request') }) {
+    sub upload {
+        validate_pos(@_, 1,
+                     { isa => 'HTTP::Daemon::ClientConn' },
+                     { isa => 'HTTP::Request' });
+        my ($self, $conn, $request) = @_;
 
 	$log->info("Upload from '%s' (%s)",
 		   $config->cardname($self->session->card),
@@ -1180,7 +1464,7 @@ class RIFEC::Handler {
 
         # Process the FILENAME part, ie. the file itself:
         $log->trace("Upload: Processing FILENAME part");
-        my $recv_fh = $file->receiver_filehandle($file->tarfilename());
+        my $recv_fh = $file->receiver_filehandle($file->tarfilename);
 
         ($phead, undef, $left) = $self->read_part($conn, $boundary, $left, $recv_fh);
 	$recv_fh->close()
@@ -1217,7 +1501,10 @@ class RIFEC::Handler {
 	    });
     }
 
-    method marklastphotoinroll(HashRef $soapbody) {
+    sub marklastphotoinroll {
+        validate_pos(@_, 1, { type => Params::Validate::HASHREF });
+        my ($self, $soapbody) = @_;
+
 	my $params = $self->_extract_params($soapbody, "ns1:MarkLastPhotoInRoll");
 
 	$log->info("MarkLastPhotoInRoll from '%s' (%s)",
@@ -1230,7 +1517,10 @@ class RIFEC::Handler {
 	return $self->_wrap_response('MarkLastPhotoInRollResponse', {});
     }
 
-    method _make_http_reply(Num $status, Str $message, Str $body) {
+    sub _make_http_reply {
+        validate_pos(@_, (1) x 4);
+        my ($self, $status, $message, $body) = @_;
+
 	# Enforce CRLF:
 	$body =~ s/ ([^\r]) \n /$1\r\n/gx;
 	my $raw = Encode::encode_utf8($body);
@@ -1247,8 +1537,12 @@ class RIFEC::Handler {
 	return HTTP::Response->new($status, $message, $header, $raw);
     }
 
-    method dispatch($request where { $_->isa('HTTP::Request') },
-                    $conn where { $_->isa('HTTP::Daemon::ClientConn') }) {
+    sub dispatch {
+        validate_pos(@_, 1,
+                     { isa => 'HTTP::Request' },
+                     { isa => 'HTTP::Daemon::ClientConn' });
+        my ($self, $request, $conn) = @_;
+
 	my $reply;
 	my %handlerof = ('"urn:StartSession"'        => \&startsession,
 			 '"urn:GetPhotoStatus"'      => \&getphotostatus,
@@ -1307,18 +1601,21 @@ class RIFEC::Handler {
 	}
 	return $reply;
     }
+
+    1;
 }
 
 #
 # End of class declarations
 #
 
+use Carp qw(confess);
+use Data::Dumper;
 use Getopt::Long;
-use Pod::Usage;
-use Proc::Daemon;
 use HTTP::Daemon;
 use HTTP::Status;
-use Carp qw(confess);
+use Pod::Usage;
+use Proc::Daemon;
 
 # A plain sub containing the listen/fork loop:
 sub run_listener {
@@ -1344,7 +1641,8 @@ sub run_listener {
                 $log->debug("%s:%d -> %s %s",
                             $conn->peerhost(), $conn->peerport(),
                             $req->method, $req->uri->path);
-                $log->trace("Request headers: " . $req->headers_as_string());
+                $log->trace("Request headers: " .
+                            Dumper([ split /\r?\n/, $req->headers_as_string() ]));
 
                 # All sanity checking is done in the handler
                 my $http_reply = $handler->dispatch($req, $conn);
@@ -1376,7 +1674,7 @@ GetOptions('help|h|?'    => sub { pod2usage(0) },
 	   'daemonize|d' => \$daemonize)
     or pod2usage(2);
 
-$config    = RIFEC::Config->new('file' => $cf_file);
+$config    = RIFEC::Config->new($cf_file);
 $log       = RIFEC::Log->new();
 
 $config->say_hello();
