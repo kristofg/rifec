@@ -27,7 +27,7 @@
 # ::Session and ::File objects are helper objects used internally by
 # the ::Handler.
 
-require 5.014;
+require 5.008006;
 
 use strict;
 use warnings;
