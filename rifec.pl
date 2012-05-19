@@ -27,6 +27,8 @@
 # ::Session and ::File objects are helper objects used internally by
 # the ::Handler.
 
+require 5.014;
+
 use strict;
 use warnings;
 
@@ -441,8 +443,10 @@ my $config;
     sub DESTROY {
         my ($self) = @_;
 
-	$self->_fh->close()
-	    or confess "Unable to close logfile while exiting: $!";
+        if (defined $self->_fh) {
+            $self->_fh->close()
+                or confess "Unable to close log filehandle while exiting: $!";
+        }
     }
 
     sub loglevel {
@@ -1692,10 +1696,10 @@ $log       = RIFEC::Log->new();
 $config->say_hello();
 
 if ($daemonize) {
-    if ($log->_fh->fileno == fileno(STDOUT)) {
-	$log->warning("Daemon mode enabled while logging to STDOUT: " .
-                      "Logs and error messages will disappear. " .
-                      "Consider logging to a file instead.");
+    if (!$config->logfile()) {
+	$log->warning("Daemon mode enabled, but no logfile specified: " .
+                      "Logs and error messages will disappear, " .
+                      "consider adding LogFile=/path/to/file to your config");
     }
     Proc::Daemon::Init();
     $log->open(); # since Proc::Daemon::Init closes all open fh's
