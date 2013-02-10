@@ -4,9 +4,10 @@ RIFEC: Receive Images From Eye-Fi Cards
 rifec.pl is a standalone program that receives images from Eye-Fi
 cards and stores them to disk.
 
-It works great with my Pro X2 card running firmware 5.0001 (all the
-4.x versions I have tried worked fine as well).  Feedback from people
-who have tested other cards and versions is welcome.
+It works great with my Pro X2 cards running firmware 5.0018 (all the
+other 5.x and 4.x versions I have tried worked fine as well).
+Feedback from people who have tested other cards and versions is
+welcome.
 
 I have only tested it on Linux, but making it run on other Unix
 variants should be trivial.  It is written in Perl 5, uses some CPAN
@@ -118,9 +119,3 @@ Ideas
 * Hooks for running custom scripts on successful upload.  Would
   probably solve the previous problem as well, but has pretty much the
   same problems, too.
-
-* Change the usage of HTTP::Daemon::get_request() so that the Upload
-  operation is sent to our code before the entire HTTP operation is
-  complete: Would allow better progress notification ("upload in
-  progress, 10% received") and probably make (network) debugging
-  easier, but is a bit more complex on the code side.

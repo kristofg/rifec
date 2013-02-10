@@ -1546,7 +1546,7 @@ my $config;
 	# 5.8.6 installation on my Synology NAS:
 	#$header->content_type_charset ('UTF-8');
 	$header->content_length       (length($raw));
-	$header->server               ('rifec.pl v0.9');
+	$header->server               ('rifec.pl');
 	$header->date                 (time);
 	$header->header               ('pragma' => 'no-cache');
 
