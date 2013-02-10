@@ -1534,7 +1534,7 @@ package RIFEC::Handler {
 	$header->content_type         ('text/xml');
 	$header->content_type_charset ('UTF-8');
 	$header->content_length       (length($raw));
-	$header->server               ('rifec.pl v0.8');
+	$header->server               ('rifec.pl');
 	$header->date                 (time);
 	$header->header               ('pragma' => 'no-cache');
 
