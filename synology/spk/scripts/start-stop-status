@@ -1,0 +1,75 @@
+#! /bin/sh
+
+#set -x
+
+CONFIGFILE="$SYNOPKG_PKGDEST/etc/synology.config"
+SCRIPT="$SYNOPKG_PKGDEST/bin/rifec.pl"
+PERL="/usr/bin/perl"
+
+export PERL5LIB="$SYNOPKG_PKGDEST/share/perl5:$SYNOPKG_PKGDEST/lib/perl5:$PERL5LIB"
+
+log()
+{
+    if [[ -n "$SYNOPKG_TEMP_LOGFILE" ]]; then
+        echo "$@" >> "$SYNOPKG_TEMP_LOGFILE"
+    fi
+}
+
+get_pids()
+{
+    PID=$(ps w | grep "$PERL $SCRIPT" | grep -v grep | awk '{print $1}' ORS=" ")
+
+    if [[ -z "$PID" ]]; then
+        return 1
+    else
+        echo "$PID"
+        return 0
+    fi
+}
+
+# Sanity check:
+if [[ -z "$SYNOPKG_PKGDEST" ]]; then
+    echo "Environment variable SYNOPKG_PKGDEST not set or empty"
+    echo "I need that to know where everything is!"
+    exit 1
+fi
+
+case $1 in
+    start)
+        if [[ ! -e "$CONFIGFILE" ]]; then
+            log "Startup failed: No config file '$CONFIGFILE' found"
+            log "(Check the documentation to find out how to create one)"
+            exit 1
+        fi
+        "$SCRIPT" -c "$CONFIGFILE" -d 2>> "$SYNOPKG_TEMP_LOGFILE"
+        RET=$?
+        exit $RET
+        ;;
+    stop)
+        PID=$(get_pids)
+        RET=$?
+        if [[ "$RET" -ne "0" ]]; then
+            exit 1
+        fi
+        kill $PID
+        RET=$?
+        exit $RET
+        ;;
+    status)
+        PID=$(get_pids)
+        RET=$?
+        exit $RET
+        ;;
+    log)
+        if [[ ! -e "$CONFIGFILE" ]]; then
+            exit 1
+        fi
+        LOGFILE=$(grep -m 1 -i ^logfile "$CONFIGFILE" | cut -d= -f2-)
+        if [[ -z "$LOGFILE" || ! -e "$LOGFILE" ]]; then
+            exit 1
+        else
+            echo "$LOGFILE"
+            exit 0
+        fi
+        ;;
+esac

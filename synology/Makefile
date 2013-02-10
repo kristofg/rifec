@@ -1,10 +1,19 @@
-TARGETDIR=/mnt/synoperl
+RIFECVERSION=0.9
+GITVERSION=$(shell git describe --always --tags --dirty)
 
-#
+# This is put into the INFO file and SPK file name
+VERSION=$(RIFECVERSION)-$(GITVERSION)
+
+TARGETDIR=$(CURDIR)/installtarget
+WGET=wget -nv
+TARBALL=$(CURDIR)/spk/package.tgz
+SPKFILE=$(CURDIR)/rifec-$(VERSION).spk
+
+# Config::IniFiles
 CONFIG-INIFILES=Config-IniFiles-2.68
 CONFIG-INIFILES-URL=http://search.cpan.org/CPAN/authors/id/S/SH/SHLOMIF/$(CONFIG-INIFILES).tar.gz
 
-#
+# Proc::Daemon
 PROC-DAEMON=Proc-Daemon-0.14
 PROC-DAEMON-URL=http://search.cpan.org/CPAN/authors/id/D/DE/DETI/Proc/$(PROC-DAEMON).tar.gz
 
@@ -37,15 +46,35 @@ XML-SAX=XML-SAX-0.99
 XML-SAX-URL=http://search.cpan.org/CPAN/authors/id/G/GR/GRANTM/$(XML-SAX).tar.gz
 
 # XML::Simple
-XML-SIMPLE=XML-Simple-2.18
+XML-SIMPLE=XML-Simple-2.20
 XML-SIMPLE-URL=http://search.cpan.org/CPAN/authors/id/G/GR/GRANTM/$(XML-SIMPLE).tar.gz
-
 
 ##
 .PHONY: all
-all: config-inifiles proc-daemon module-runtime try-tiny module-implementation params-validate xml-namespacesupport xml-sax-base xml-sax xml-simple
+all: spk
 
-download: $(CONFIG-INIFILES).tar.gz $(PROC-DAEMON).tar.gz $(PARAMS-VALIDATE).tar.gz $(XML-SIMPLE).tar.gz $(XML-SAX).tar.gz
+.PHONY: spk
+spk: metafiles tarball
+	cd $(CURDIR)/spk && tar -cf $(SPKFILE) *
+
+.PHONY: tarball
+tarball: perlmodules scriptfiles
+	cd $(TARGETDIR) && tar -czf $(TARBALL) *
+
+.PHONY: scriptfiles
+scriptfiles:
+	mkdir -p $(TARGETDIR)/bin $(TARGETDIR)/etc $(TARGETDIR)/logs
+	cp ../rifec.pl $(TARGETDIR)/bin/
+	cp ../rifec.config $(TARGETDIR)/etc/example.config
+
+.PHONY: metafiles
+metafiles: tarball
+	$(eval PACKAGEMD5 := $(shell md5sum $(TARBALL) | awk '{print $$1}'))
+	perl -pe 's/%%VERSION%%/$(VERSION)/g; s/%%CHECKSUM%%/$(PACKAGEMD5)/g;' < INFO.template > $(CURDIR)/spk/INFO
+
+##
+.PHONY: perlmodules
+perlmodules: config-inifiles proc-daemon module-runtime try-tiny module-implementation params-validate xml-namespacesupport xml-sax-base xml-sax xml-simple
 
 .PHONY: clean
 clean:
@@ -74,12 +103,15 @@ distclean: clean
 	rm -rf $(XML-SIMPLE).tar.gz
 
 .PHONY: targetclean
-targetclean:
+targetclean: distclean
 	rm -rf $(TARGETDIR)
+	rm -rf $(TARBALL)
+	rm -rf $(SPKFILE)
+	rm -f $(CURDIR)/spk/INFO
 
 ##
 $(CONFIG-INIFILES).tar.gz:
-	wget $(CONFIG-INIFILES-URL)
+	$(WGET) $(CONFIG-INIFILES-URL)
 
 .PHONY: config-inifiles
 config-inifiles: $(CONFIG-INIFILES).tar.gz
@@ -91,7 +123,7 @@ config-inifiles: $(CONFIG-INIFILES).tar.gz
 
 ##
 $(PROC-DAEMON).tar.gz:
-	wget $(PROC-DAEMON-URL)
+	$(WGET) $(PROC-DAEMON-URL)
 
 .PHONY: proc-daemon
 proc-daemon: $(PROC-DAEMON).tar.gz
@@ -103,7 +135,7 @@ proc-daemon: $(PROC-DAEMON).tar.gz
 
 ##
 $(MODULE-RUNTIME).tar.gz:
-	wget $(MODULE-RUNTIME-URL)
+	$(WGET) $(MODULE-RUNTIME-URL)
 
 .PHONY: module-runtime
 module-runtime:	$(MODULE-RUNTIME).tar.gz
@@ -115,7 +147,7 @@ module-runtime:	$(MODULE-RUNTIME).tar.gz
 
 ##
 $(TRY-TINY).tar.gz:
-	wget $(TRY-TINY-URL)
+	$(WGET) $(TRY-TINY-URL)
 
 .PHONY: try-tiny
 try-tiny: $(TRY-TINY).tar.gz
@@ -127,7 +159,7 @@ try-tiny: $(TRY-TINY).tar.gz
 
 ##
 $(MODULE-IMPLEMENTATION).tar.gz:
-	wget $(MODULE-IMPLEMENTATION-URL)
+	$(WGET) $(MODULE-IMPLEMENTATION-URL)
 
 .PHONY: module-implementation
 module-implementation: $(MODULE-IMPLEMENTATION).tar.gz
@@ -139,7 +171,7 @@ module-implementation: $(MODULE-IMPLEMENTATION).tar.gz
 
 ##
 $(PARAMS-VALIDATE).tar.gz:
-	wget $(PARAMS-VALIDATE-URL)
+	$(WGET) $(PARAMS-VALIDATE-URL)
 
 .PHONY: params-validate
 params-validate: $(PARAMS-VALIDATE).tar.gz
@@ -151,7 +183,7 @@ params-validate: $(PARAMS-VALIDATE).tar.gz
 
 ##
 $(XML-NAMESPACESUPPORT).tar.gz:
-	wget $(XML-NAMESPACESUPPORT-URL)
+	$(WGET) $(XML-NAMESPACESUPPORT-URL)
 
 .PHONY: xml-namespacesupport
 xml-namespacesupport: $(XML-NAMESPACESUPPORT).tar.gz
@@ -163,7 +195,7 @@ xml-namespacesupport: $(XML-NAMESPACESUPPORT).tar.gz
 
 ##
 $(XML-SAX-BASE).tar.gz:
-	wget $(XML-SAX-BASE-URL)
+	$(WGET) $(XML-SAX-BASE-URL)
 
 .PHONY: xml-sax-base
 xml-sax-base: $(XML-SAX-BASE).tar.gz
@@ -175,7 +207,7 @@ xml-sax-base: $(XML-SAX-BASE).tar.gz
 
 ##
 $(XML-SAX).tar.gz:
-	wget $(XML-SAX-URL)
+	$(WGET) $(XML-SAX-URL)
 
 
 # See also http://perl-xml.sourceforge.net/faq/#parserdetails.ini
@@ -183,19 +215,21 @@ $(XML-SAX).tar.gz:
 xml-sax: $(XML-SAX).tar.gz
 	tar xzf $(XML-SAX).tar.gz
 	cd $(XML-SAX) && \
-		perl Makefile.PL PREFIX=$(TARGETDIR) && \
+		export PERL5LIB="$(TARGETDIR)/share/perl5:$(TARGETDIR)/lib/perl5:$PERL5LIB" && \
+		echo "n" | perl Makefile.PL PREFIX=$(TARGETDIR) && \
 		make && \
 		make install && \
-		perl -I$(TARGETDIR)/share/perl5 -MXML::SAX  -e "XML::SAX->add_parser(q(XML::SAX::PurePerl))->save_parsers()"
+		perl -MXML::SAX  -e "XML::SAX->add_parser(q(XML::SAX::PurePerl))->save_parsers()"
 
 ##
 $(XML-SIMPLE).tar.gz:
-	wget $(XML-SIMPLE-URL)
+	$(WGET) $(XML-SIMPLE-URL)
 
 .PHONY: xml-simple
 xml-simple: $(XML-SIMPLE).tar.gz
 	tar xzf $(XML-SIMPLE).tar.gz
 	cd $(XML-SIMPLE) && \
+		export PERL5LIB="$(TARGETDIR)/share/perl5:$(TARGETDIR)/lib/perl5:$PERL5LIB" && \
 		perl Makefile.PL PREFIX=$(TARGETDIR) && \
 		make && \
 		make install

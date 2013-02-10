@@ -1,0 +1,39 @@
+#! /bin/sh
+
+#set -x
+
+log()
+{
+    if [[ -n "$SYNOPKG_TEMP_LOGFILE" ]]; then
+        echo "$@" >> "$SYNOPKG_TEMP_LOGFILE"
+    fi
+}
+
+if [[ -z "$SYNOPKG_PKGDEST" ]]; then
+    echo "Error: SYNOPKG_PKGDEST env variable empty - where am I?."
+    exit 1
+fi
+
+VOLUME=$(echo "$SYNOPKG_PKGDEST" | cut -d'/' -f2)
+VOLUME="/$VOLUME"
+if [[ -z "$VOLUME" || ! -d "$VOLUME" ]]; then
+    log "Error: Unable to figure out my target volume [$VOLUME]."
+    exit 1
+fi
+
+TMPDIR="$VOLUME/@tmp/rifec"
+mkdir -p "$TMPDIR"
+RET=$?
+if [[ "$RET" -ne "0" ]]; then
+    log "Error: Unable to create backup directory [$TMPDIR]."
+    exit 1
+fi
+
+CFG="$SYNOPKG_PKGDEST/etc/synology.config"
+if [[ -e "$CFG" ]]; then
+    cp -f "$CFG" "$TMPDIR"
+fi
+
+cp -rf "$SYNOPKG_PKGDEST/logs" "$TMPDIR"
+
+exit 0

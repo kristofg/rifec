@@ -1,0 +1,8 @@
+package="rifec"
+version="%%VERSION%%"
+description="Receive Images From Eye-Fi Cards"
+maintainer="https://github.com/kristofg/rifec"
+arch="noarch"
+startable="yes"
+install_reboot="no"
+checksum="%%CHECKSUM%%"
