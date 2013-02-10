@@ -14,6 +14,12 @@ variants should be trivial.  It is written in Perl 5, uses some CPAN
 modules, and is GPL.  See the file INSTALL.txt for more information on
 installation and dependencies.
 
+It works on Synology NAS devices as well.  It installs as an SPK
+software package in the DSM Package Center, so it will restart
+automatically on reboot etc.  Look in the synology/ subdirectory in
+the "synology2" branch for more information:
+https://github.com/kristofg/rifec/tree/synology2/synology
+
 This is third-party software; it is not developed nor supported by
 Eye-Fi.  Because of this, there will be limitations in what it can do
 compared to the official Eye-Fi software.
