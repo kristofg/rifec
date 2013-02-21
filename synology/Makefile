@@ -220,7 +220,7 @@ $(XML-SAX).tar.gz:
 xml-sax: $(XML-SAX).tar.gz
 	tar xzf $(XML-SAX).tar.gz
 	cd $(XML-SAX) && \
-		export PERL5LIB="$(TARGETDIR)/share/perl5:$(TARGETDIR)/lib/perl5:$PERL5LIB" && \
+		export PERL5LIB="$(TARGETDIR)/share/perl5:$(TARGETDIR)/lib/perl5:$(PERL5LIB)" && \
 		echo "n" | perl Makefile.PL $(MAKEMAKERARGS) && \
 		make && \
 		make install && \
@@ -234,7 +234,7 @@ $(XML-SIMPLE).tar.gz:
 xml-simple: $(XML-SIMPLE).tar.gz
 	tar xzf $(XML-SIMPLE).tar.gz
 	cd $(XML-SIMPLE) && \
-		export PERL5LIB="$(TARGETDIR)/share/perl5:$(TARGETDIR)/lib/perl5:$PERL5LIB" && \
+		export PERL5LIB="$(TARGETDIR)/share/perl5:$(TARGETDIR)/lib/perl5:$(PERL5LIB)" && \
 		perl Makefile.PL $(MAKEMAKERARGS) && \
 		make && \
 		make install
