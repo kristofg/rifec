@@ -10,6 +10,10 @@ WGET=wget -nv
 TARBALL=$(CURDIR)/spk/package.tgz
 SPKFILE=$(CURDIR)/rifec-$(VERSION).spk
 
+# Make the files end up in semi-sane places
+MAKEMAKERARGS=PREFIX=$(TARGETDIR) LIB=$(TARGETDIR)/share/perl5
+MODULEBUILDERARGS=--install_base=$(TARGETDIR) --install_path lib=$(TARGETDIR)/share/perl5
+
 # Config::IniFiles
 CONFIG-INIFILES=Config-IniFiles-2.68
 CONFIG-INIFILES-URL=http://search.cpan.org/CPAN/authors/id/S/SH/SHLOMIF/$(CONFIG-INIFILES).tar.gz
@@ -118,7 +122,7 @@ $(CONFIG-INIFILES).tar.gz:
 config-inifiles: $(CONFIG-INIFILES).tar.gz
 	tar xzf $(CONFIG-INIFILES).tar.gz
 	cd $(CONFIG-INIFILES) && \
-		perl Build.PL --install_base=$(TARGETDIR) && \
+		perl Build.PL $(MODULEBUILDERARGS) && \
 		./Build && \
 		./Build install
 
@@ -130,7 +134,7 @@ $(PROC-DAEMON).tar.gz:
 proc-daemon: $(PROC-DAEMON).tar.gz
 	tar xzf $(PROC-DAEMON).tar.gz
 	cd $(PROC-DAEMON) && \
-		perl Makefile.PL PREFIX=$(TARGETDIR) && \
+		perl Makefile.PL $(MAKEMAKERARGS) && \
 		make && \
 		make install
 
@@ -142,7 +146,7 @@ $(MODULE-RUNTIME).tar.gz:
 module-runtime:	$(MODULE-RUNTIME).tar.gz
 	tar xzf $(MODULE-RUNTIME).tar.gz
 	cd $(MODULE-RUNTIME) && \
-		perl Build.PL --install_base=$(TARGETDIR) && \
+		perl Build.PL $(MODULEBUILDERARGS) && \
 		./Build && \
 		./Build install
 
@@ -154,7 +158,7 @@ $(TRY-TINY).tar.gz:
 try-tiny: $(TRY-TINY).tar.gz
 	tar xzf $(TRY-TINY).tar.gz
 	cd $(TRY-TINY) && \
-		perl Makefile.PL PREFIX=$(TARGETDIR) && \
+		perl Makefile.PL $(MAKEMAKERARGS) && \
 		make && \
 		make install
 
@@ -166,7 +170,7 @@ $(MODULE-IMPLEMENTATION).tar.gz:
 module-implementation: $(MODULE-IMPLEMENTATION).tar.gz
 	tar xzf $(MODULE-IMPLEMENTATION).tar.gz
 	cd $(MODULE-IMPLEMENTATION) && \
-		perl Makefile.PL PREFIX=$(TARGETDIR) && \
+		perl Makefile.PL $(MAKEMAKERARGS) && \
 		make && \
 		make install
 
@@ -178,7 +182,7 @@ $(PARAMS-VALIDATE).tar.gz:
 params-validate: $(PARAMS-VALIDATE).tar.gz
 	tar xzf $(PARAMS-VALIDATE).tar.gz
 	cd $(PARAMS-VALIDATE) && \
-		perl Build.PL --install_base=$(TARGETDIR) --pp && \
+		perl Build.PL $(MODULEBUILDERARGS) --pp && \
 		./Build && \
 		./Build install
 
@@ -190,7 +194,7 @@ $(XML-NAMESPACESUPPORT).tar.gz:
 xml-namespacesupport: $(XML-NAMESPACESUPPORT).tar.gz
 	tar xzf $(XML-NAMESPACESUPPORT).tar.gz
 	cd $(XML-NAMESPACESUPPORT) && \
-		perl Makefile.PL PREFIX=$(TARGETDIR) && \
+		perl Makefile.PL $(MAKEMAKERARGS) && \
 		make && \
 		make install
 
@@ -202,7 +206,7 @@ $(XML-SAX-BASE).tar.gz:
 xml-sax-base: $(XML-SAX-BASE).tar.gz
 	tar xzf $(XML-SAX-BASE).tar.gz
 	cd $(XML-SAX-BASE) && \
-		perl Makefile.PL PREFIX=$(TARGETDIR) && \
+		perl Makefile.PL $(MAKEMAKERARGS) && \
 		make && \
 		make install
 
@@ -217,7 +221,7 @@ xml-sax: $(XML-SAX).tar.gz
 	tar xzf $(XML-SAX).tar.gz
 	cd $(XML-SAX) && \
 		export PERL5LIB="$(TARGETDIR)/share/perl5:$(TARGETDIR)/lib/perl5:$PERL5LIB" && \
-		echo "n" | perl Makefile.PL PREFIX=$(TARGETDIR) && \
+		echo "n" | perl Makefile.PL $(MAKEMAKERARGS) && \
 		make && \
 		make install && \
 		perl -MXML::SAX  -e "XML::SAX->add_parser(q(XML::SAX::PurePerl))->save_parsers()"
@@ -231,6 +235,6 @@ xml-simple: $(XML-SIMPLE).tar.gz
 	tar xzf $(XML-SIMPLE).tar.gz
 	cd $(XML-SIMPLE) && \
 		export PERL5LIB="$(TARGETDIR)/share/perl5:$(TARGETDIR)/lib/perl5:$PERL5LIB" && \
-		perl Makefile.PL PREFIX=$(TARGETDIR) && \
+		perl Makefile.PL $(MAKEMAKERARGS) && \
 		make && \
 		make install
