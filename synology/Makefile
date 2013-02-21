@@ -1,5 +1,6 @@
 RIFECVERSION=0.9
-GITVERSION=$(shell git describe --always --tags --dirty)
+GITOUTPUT=$(shell git describe --always --tags --dirty 2> /dev/null)
+GITVERSION=$(shell if [ -n "$(GITOUTPUT)" ]; then echo "$(GITOUTPUT)"; else echo "nogit"; fi)
 
 # This is put into the INFO file and SPK file name
 VERSION=$(RIFECVERSION)-$(GITVERSION)
