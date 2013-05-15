@@ -14,8 +14,12 @@ SPKFILE=$(CURDIR)/rifec-$(VERSION).spk
 MAKEMAKERARGS=PREFIX=$(TARGETDIR) LIB=$(TARGETDIR)/share/perl5
 MODULEBUILDERARGS=--install_base=$(TARGETDIR) --install_path lib=$(TARGETDIR)/share/perl5
 
+# List::MoreUtils
+LIST-MOREUTILS=List-MoreUtils-0.33
+LIST-MOREUTILS-URL=http://search.cpan.org/CPAN/authors/id/A/AD/ADAMK/$(LIST-MOREUTILS).tar.gz
+
 # Config::IniFiles
-CONFIG-INIFILES=Config-IniFiles-2.68
+CONFIG-INIFILES=Config-IniFiles-2.80
 CONFIG-INIFILES-URL=http://search.cpan.org/CPAN/authors/id/S/SH/SHLOMIF/$(CONFIG-INIFILES).tar.gz
 
 # Proc::Daemon
@@ -79,10 +83,11 @@ metafiles: tarball
 
 ##
 .PHONY: perlmodules
-perlmodules: config-inifiles proc-daemon module-runtime try-tiny module-implementation params-validate xml-namespacesupport xml-sax-base xml-sax xml-simple
+perlmodules: list-moreutils config-inifiles proc-daemon module-runtime try-tiny module-implementation params-validate xml-namespacesupport xml-sax-base xml-sax xml-simple
 
 .PHONY: clean
 clean:
+	rm -rf $(LIST-MOREUTILS)
 	rm -rf $(CONFIG-INIFILES)
 	rm -rf $(PROC-DAEMON)
 	rm -rf $(MODULE-RUNTIME)
@@ -96,6 +101,7 @@ clean:
 
 .PHONY: distclean
 distclean: clean
+	rm -rf $(LIST-MOREUTILS).tar.gz
 	rm -rf $(CONFIG-INIFILES).tar.gz
 	rm -rf $(PROC-DAEMON).tar.gz
 	rm -rf $(MODULE-RUNTIME).tar.gz
@@ -113,6 +119,18 @@ targetclean: distclean
 	rm -rf $(TARBALL)
 	rm -rf $(SPKFILE)
 	rm -f $(CURDIR)/spk/INFO
+
+##
+$(LIST-MOREUTILS).tar.gz:
+	$(WGET) $(LIST-MOREUTILS-URL)
+
+.PHONY: list-moreutils
+list-moreutils: $(LIST-MOREUTILS).tar.gz
+	tar xzf $(LIST-MOREUTILS).tar.gz
+	cd $(LIST-MOREUTILS) && \
+		perl Makefile.PL $(MAKEMAKERARGS) && \
+		make && \
+		make install
 
 ##
 $(CONFIG-INIFILES).tar.gz:
