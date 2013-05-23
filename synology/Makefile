@@ -128,7 +128,7 @@ $(LIST-MOREUTILS).tar.gz:
 list-moreutils: $(LIST-MOREUTILS).tar.gz
 	tar xzf $(LIST-MOREUTILS).tar.gz
 	cd $(LIST-MOREUTILS) && \
-		perl Makefile.PL $(MAKEMAKERARGS) && \
+		perl Makefile.PL -pm $(MAKEMAKERARGS) && \
 		make && \
 		make install
 
