@@ -31,7 +31,7 @@ MODULE-RUNTIME=Module-Runtime-0.013
 MODULE-RUNTIME-URL=http://search.cpan.org/CPAN/authors/id/Z/ZE/ZEFRAM/$(MODULE-RUNTIME).tar.gz
 
 # Try::Tiny (needed by Params::Validate via Module::Implementation)
-TRY-TINY=Try-Tiny-0.11
+TRY-TINY=Try-Tiny-0.18
 TRY-TINY-URL=http://search.cpan.org/CPAN/authors/id/D/DO/DOY/$(TRY-TINY).tar.gz
 
 # Module::Implementation (needed by Params::Validate)
