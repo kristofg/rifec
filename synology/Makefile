@@ -19,7 +19,7 @@ LIST-MOREUTILS=List-MoreUtils-0.33
 LIST-MOREUTILS-URL=http://search.cpan.org/CPAN/authors/id/A/AD/ADAMK/$(LIST-MOREUTILS).tar.gz
 
 # Config::IniFiles
-CONFIG-INIFILES=Config-IniFiles-2.80
+CONFIG-INIFILES=Config-IniFiles-2.83
 CONFIG-INIFILES-URL=http://search.cpan.org/CPAN/authors/id/S/SH/SHLOMIF/$(CONFIG-INIFILES).tar.gz
 
 # Proc::Daemon
@@ -31,7 +31,7 @@ MODULE-RUNTIME=Module-Runtime-0.013
 MODULE-RUNTIME-URL=http://search.cpan.org/CPAN/authors/id/Z/ZE/ZEFRAM/$(MODULE-RUNTIME).tar.gz
 
 # Try::Tiny (needed by Params::Validate via Module::Implementation)
-TRY-TINY=Try-Tiny-0.18
+TRY-TINY=Try-Tiny-0.22
 TRY-TINY-URL=http://search.cpan.org/CPAN/authors/id/D/DO/DOY/$(TRY-TINY).tar.gz
 
 # Module::Implementation (needed by Params::Validate)
@@ -39,7 +39,7 @@ MODULE-IMPLEMENTATION=Module-Implementation-0.06
 MODULE-IMPLEMENTATION-URL=http://search.cpan.org/CPAN/authors/id/D/DR/DROLSKY/$(MODULE-IMPLEMENTATION).tar.gz
 
 # Params::Validate
-PARAMS-VALIDATE=Params-Validate-1.06
+PARAMS-VALIDATE=Params-Validate-1.18
 PARAMS-VALIDATE-URL=http://search.cpan.org/CPAN/authors/id/D/DR/DROLSKY/$(PARAMS-VALIDATE).tar.gz
 
 # XML::NamespaceSupport
