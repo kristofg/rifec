@@ -1158,10 +1158,11 @@ package RIFEC::Handler {
 
         my %paramspec_of = (
             "ns1:StartSession" => {
-                'macaddress'            => { regex => $macaddress },
-                'transfermodetimestamp' => { regex => $number     },
-                'cnonce'                => { regex => $md5sum     },
-                'transfermode'          => { regex => $number     },
+                'macaddress'            => { regex => $macaddress            },
+                'transfermodetimestamp' => { regex => $number                },
+                'cnonce'                => { regex => $md5sum                },
+                'transfermode'          => { regex => $number                },
+                'productfeatures'       => { regex => $number, optional => 1 },
             },
             "ns1:GetPhotoStatus" => {
                 'filesize'      => { regex => $number                        },
