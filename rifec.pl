@@ -31,6 +31,7 @@ require 5.014;
 
 use strict;
 use warnings;
+use filetest 'access';
 
 my $log;
 my $config;
